@@ -9,7 +9,7 @@ import type { QueueJob } from "../queue.js";
 import { escapeHtml, findReferencedMediaFiles, formatTelegramHtml } from "../telegram.js";
 import { formatStepUpdate, runAgy } from "../agy-runner.js";
 import { parseContext, parseContextMetrics, parseCredits, parseUsageQuota, parseTokenValue, runPtyCommand } from "../pty-runner.js";
-import { settingsFor } from "../domain/settings.js";
+import { isZh, settingsFor } from "../domain/settings.js";
 import { addUsage, formatTokenCount } from "../domain/usage-math.js";
 import { buildTelemetryQuoteBlock } from "../domain/telemetry.js";
 import { reply, replyWithFormattedResponse, replyWithHtml, type SentMessage } from "../ui/reply.js";
@@ -63,15 +63,25 @@ const PTY_REPORTS: Record<PtyReportKind, PtyReportSpec> = {
 
 async function runPtyReportJob(context: AppContext, job: QueueJob & { kind: PtyReportKind }, controller: AbortController, isCancelled: () => boolean): Promise<void> {
   const spec = PTY_REPORTS[job.kind];
+  const zh = isZh(settingsFor(context, job.chatId), context, job.chatId);
+  const missingConvMsg = zh
+    ? "当前没有活动的 AGY 会话。请先恢复或开启新会话。"
+    : spec.missingConversationMessage;
+  const startingMsg = zh
+    ? (job.kind === "usage" ? "正在通过 PTY 查询 AGY 模型与配额..." : job.kind === "credits" ? "正在通过 PTY 查询 AGY 积分与额度..." : "正在通过 PTY 读取当前对话的活动上下文...")
+    : spec.startingMessage;
+  const doneMsg = zh
+    ? (job.kind === "usage" ? "配额查询完成。" : job.kind === "credits" ? "积分查询完成。" : "活动上下文读取完成。")
+    : spec.doneMessage;
   let progressMessage: { message_id: number } | null = null;
   try {
     const session = context.state.session(job.chatId);
     if (spec.missingConversationMessage && !spec.conversationId?.(session)) {
-      await reply(context, job.chatId, spec.missingConversationMessage, createMainKeyboard(settingsFor(context, job.chatId)));
+      await reply(context, job.chatId, missingConvMsg || spec.missingConversationMessage, createMainKeyboard(settingsFor(context, job.chatId)));
       return;
     }
     await context.telegram.sendChatAction(job.chatId);
-    progressMessage = await context.telegram.sendMessage(job.chatId, spec.startingMessage);
+    progressMessage = await context.telegram.sendMessage(job.chatId, startingMsg);
     const settings = settingsFor(context, job.chatId);
     const effectiveWorkspace = settings.workspace || context.config.agy.workspace;
     const effectiveAgyConfig = effectiveWorkspace === context.config.agy.workspace
@@ -94,7 +104,7 @@ async function runPtyReportJob(context: AppContext, job: QueueJob & { kind: PtyR
         await refreshActiveMenu(context, job.chatId);
       }
     }
-    if (progressMessage) await context.telegram.editMessageText(job.chatId, progressMessage.message_id, spec.doneMessage).catch(() => undefined);
+    if (progressMessage) await context.telegram.editMessageText(job.chatId, progressMessage.message_id, doneMsg).catch(() => undefined);
     const replyMarkup = job.kind === "context"
       ? contextActionsKeyboard()
       : createMainKeyboard(settingsFor(context, job.chatId));
@@ -198,12 +208,15 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
       const verbose = settings.verbose || "detailed";
       if (verbose === "silent") return;
 
+      const zh = isZh(settings, context, job.chatId);
       const elapsed = ((Date.now() - startedAt) / 1000).toFixed(0);
 
       if (verbose === "compact") {
         const latestStep = recentSteps.length > 0 ? recentSteps[recentSteps.length - 1] : "";
         const compactStatus = latestStep ? ` · ${latestStep}` : "";
-        pendingEditContent = `${wsNotice}⏳ AGY is working... (${elapsed}s · ${modelLabel(settings.model)}${compactStatus})`;
+        pendingEditContent = zh
+          ? `${wsNotice}⏳ AGY 正在处理... (${elapsed}秒 · ${modelLabel(settings.model)}${compactStatus})`
+          : `${wsNotice}⏳ AGY is working... (${elapsed}s · ${modelLabel(settings.model)}${compactStatus})`;
         void flushProgress();
         return;
       }
@@ -216,13 +229,15 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
       if (stepsDisplay.length) {
         body = `\n\n${stepsDisplay.join("\n")}`;
       } else if (hasInitialized) {
-        body = "\n\n🤔 Thinking / connecting model...";
+        body = zh ? "\n\n🤔 正在思考 / 连接模型..." : "\n\n🤔 Thinking / connecting model...";
       } else if (Number(elapsed) >= 3) {
-        body = "\n\n⚡ Loading skills & context...";
+        body = zh ? "\n\n⚡ 正在加载技能与上下文..." : "\n\n⚡ Loading skills & context...";
       } else {
-        body = "\n\n🚀 Starting AGY session...";
+        body = zh ? "\n\n🚀 正在启动 AGY 会话..." : "\n\n🚀 Starting AGY session...";
       }
-      pendingEditContent = `${wsNotice}⏳ AGY is working... (${elapsed}s · ${modelLabel(settings.model)})${body}`;
+      pendingEditContent = zh
+        ? `${wsNotice}⏳ AGY 正在处理... (${elapsed}秒 · ${modelLabel(settings.model)})${body}`
+        : `${wsNotice}⏳ AGY is working... (${elapsed}s · ${modelLabel(settings.model)})${body}`;
 
       void flushProgress();
     };

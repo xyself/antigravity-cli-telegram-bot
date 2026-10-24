@@ -1,31 +1,33 @@
 import type { AppContext } from "../context.js";
 import { getActiveModels } from "../models.js";
 import { formatRelativeTime } from "../db.js";
-import { settingsFor } from "../domain/settings.js";
+import { isZh, settingsFor } from "../domain/settings.js";
 import { listAvailableWorkspaces } from "../domain/workspace.js";
 import type { ChatId, InlineKeyboardMarkup, InlineButton, ConversationSummary, SessionState } from "../types.js";
 
 export function button(text: string, callback_data: string): { text: string; callback_data: string } { return { text, callback_data }; }
 
-export function backKeyboard(): InlineKeyboardMarkup { return { inline_keyboard: [[button("‹ Back", "menu:main")]] }; }
+export function backKeyboard(zh = false): InlineKeyboardMarkup {
+  return { inline_keyboard: [[button(zh ? "‹ 返回" : "‹ Back", "menu:main")]] };
+}
 
-export function contextActionsKeyboard(): InlineKeyboardMarkup {
+export function contextActionsKeyboard(zh = false): InlineKeyboardMarkup {
   return {
     inline_keyboard: [
-      [button("🗜️ Compact Context", "action:compact"), button("🔄 Refresh", "action:context")],
+      [button(zh ? "🗜️ 压缩上下文" : "🗜️ Compact Context", "action:compact"), button(zh ? "🔄 刷新" : "🔄 Refresh", "action:context")],
     ],
   };
 }
 
-export function contextButtonLabel(session?: SessionState | null): string {
+export function contextButtonLabel(session?: SessionState | null, zh = false): string {
   if (session?.contextTokens) {
     const pct = session.contextPercentage !== undefined ? ` (${session.contextPercentage}%)` : "";
     return `🧠 ${session.contextTokens}${pct}`;
   }
-  return "🧠 Active Context";
+  return zh ? "🧠 活动上下文" : "🧠 Active Context";
 }
 
-export function resumeKeyboard(page = 0, totalPages = 1, items: ConversationSummary[] = []): InlineKeyboardMarkup {
+export function resumeKeyboard(page = 0, totalPages = 1, items: ConversationSummary[] = [], zh = false): InlineKeyboardMarkup {
   const rows: InlineButton[][] = items.map((item) => {
     const time = formatRelativeTime(item.last_modified_time);
     const suffix = ` (${time})`;
@@ -41,15 +43,16 @@ export function resumeKeyboard(page = 0, totalPages = 1, items: ConversationSumm
     ];
   });
   const navigation: InlineButton[] = [];
-  if (page > 0) navigation.push(button("‹ Previous", `resume:page:${page - 1}`));
+  if (page > 0) navigation.push(button(zh ? "‹ 上一页" : "‹ Previous", `resume:page:${page - 1}`));
   navigation.push(button(`${page + 1}/${totalPages}`, "noop"));
-  if (page < totalPages - 1) navigation.push(button("Next ›", `resume:page:${page + 1}`));
+  if (page < totalPages - 1) navigation.push(button(zh ? "下一页 ›" : "Next ›", `resume:page:${page + 1}`));
   if (navigation.length) rows.push(navigation);
-  rows.push([button("‹ Back", "menu:main")]);
+  rows.push([button(zh ? "‹ 返回" : "‹ Back", "menu:main")]);
   return { inline_keyboard: rows };
 }
 
 export function modelKeyboard(context: AppContext, chatId: ChatId, page = 0): InlineKeyboardMarkup {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   const pageSize = 5;
   const models = getActiveModels();
   const totalPages = Math.max(1, Math.ceil(models.length / pageSize));
@@ -61,32 +64,48 @@ export function modelKeyboard(context: AppContext, chatId: ChatId, page = 0): In
   navigation.push(button(`${normalizedPage + 1}/${totalPages}`, "noop"));
   if (normalizedPage < totalPages - 1) navigation.push(button("›", `menu:models:${normalizedPage + 1}`));
   rows.push(navigation);
-  rows.push([button("‹ Back", "menu:main")]);
+  rows.push([button(zh ? "‹ 返回" : "‹ Back", "menu:main")]);
   return { inline_keyboard: rows };
 }
 
 export function effortKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   const selected = settingsFor(context, chatId).effort;
-  const choices = ["low", "medium", "high"].map((value) => button(`${value === selected ? "✅ " : ""}${value}`, `set:effort:${value}`));
-  return { inline_keyboard: [choices, [button("‹ Back", "menu:main")]] };
+  const choices = ["low", "medium", "high"].map((value) => {
+    const label = zh ? (value === "low" ? "低 (low)" : value === "medium" ? "中 (medium)" : "高 (high)") : value;
+    return button(`${value === selected ? "✅ " : ""}${label}`, `set:effort:${value}`);
+  });
+  return { inline_keyboard: [choices, [button(zh ? "‹ 返回" : "‹ Back", "menu:main")]] };
 }
 
 export function modeKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   const selected = settingsFor(context, chatId).mode;
-  const choices = ["plan", "accept-edits"].map((value) => button(`${value === selected ? "✅ " : ""}${value}`, `set:mode:${value}`));
-  return { inline_keyboard: [choices, [button("‹ Back", "menu:main")]] };
+  const choices = ["plan", "accept-edits"].map((value) => {
+    const label = zh ? (value === "plan" ? "规划 (plan)" : "接受编辑 (accept-edits)") : value;
+    return button(`${value === selected ? "✅ " : ""}${label}`, `set:mode:${value}`);
+  });
+  return { inline_keyboard: [choices, [button(zh ? "‹ 返回" : "‹ Back", "menu:main")]] };
 }
 
 export function sandboxKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   const selected = settingsFor(context, chatId).sandbox;
   const disableAllowed = context.config.agy.allowSandboxDisable || !context.config.agy.sandbox;
-  return { inline_keyboard: [[button(`${selected ? "✅ " : ""}On`, "set:sandbox:on"), button(`${!selected ? "✅ " : ""}Off${disableAllowed ? "" : " (locked)"}`, disableAllowed ? "set:sandbox:off" : "noop")], [button("‹ Back", "menu:main")]] };
+  const onLabel = zh ? "开启" : "On";
+  const offLabel = zh ? "关闭" : "Off";
+  const lockedLabel = zh ? " (锁定)" : " (locked)";
+  return { inline_keyboard: [[button(`${selected ? "✅ " : ""}${onLabel}`, "set:sandbox:on"), button(`${!selected ? "✅ " : ""}${offLabel}${disableAllowed ? "" : lockedLabel}`, disableAllowed ? "set:sandbox:off" : "noop")], [button(zh ? "‹ 返回" : "‹ Back", "menu:main")]] };
 }
 
 export function verboseKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   const selected = settingsFor(context, chatId).verbose || "detailed";
-  const choices = ["detailed", "compact", "silent"].map((value) => button(`${value === selected ? "✅ " : ""}${value}`, `set:verbose:${value}`));
-  return { inline_keyboard: [choices, [button("‹ Back", "menu:main")]] };
+  const choices = ["detailed", "compact", "silent"].map((value) => {
+    const label = zh ? (value === "detailed" ? "详细 (detailed)" : value === "compact" ? "紧凑 (compact)" : "静默 (silent)") : value;
+    return button(`${value === selected ? "✅ " : ""}${label}`, `set:verbose:${value}`);
+  });
+  return { inline_keyboard: [choices, [button(zh ? "‹ 返回" : "‹ Back", "menu:main")]] };
 }
 
 export function workspaceKeyboard(context: AppContext, chatId: ChatId, page = 0): InlineKeyboardMarkup {
@@ -120,46 +139,53 @@ export function workspaceKeyboard(context: AppContext, chatId: ChatId, page = 0)
     rows.push(navigation);
   }
 
+  const isZh = (process.env.BOT_LANGUAGE || "").toLowerCase().startsWith("zh");
   const actionsRow: InlineButton[] = [];
   if (activeWs) {
-    actionsRow.push(button("🔄 Reset default", "set:ws:clear"));
+    actionsRow.push(button(isZh ? "🔄 重置默认" : "🔄 Reset default", "set:ws:clear"));
   }
-  actionsRow.push(button("‹ Back", "menu:main"));
+  actionsRow.push(button(isZh ? "‹ 返回" : "‹ Back", "menu:main"));
   rows.push(actionsRow);
 
   return { inline_keyboard: rows };
 }
 
 export function profileLabel(profile: import("../types.js").MenuProfile): string {
-  if (profile === "daily") return "Daily";
-  if (profile === "dev") return "Dev";
-  return "Mixed";
+  const isZh = (process.env.BOT_LANGUAGE || "").toLowerCase().startsWith("zh");
+  if (profile === "daily") return isZh ? "日常模式" : "Daily";
+  if (profile === "dev") return isZh ? "开发模式" : "Dev";
+  return isZh ? "均衡模式" : "Mixed";
 }
 
 export function menuProfileKeyboard(currentProfile: import("../types.js").MenuProfile): InlineKeyboardMarkup {
+  const isZh = (process.env.BOT_LANGUAGE || "").toLowerCase().startsWith("zh");
   const profiles: Array<{ id: import("../types.js").MenuProfile; label: string; desc: string }> = [
-    { id: "mixed", label: "Mixed", desc: "Balanced (default)" },
-    { id: "daily", label: "Daily", desc: "Minimalist & Voice" },
-    { id: "dev", label: "Dev", desc: "Workspace & Context" },
+    { id: "mixed", label: isZh ? "均衡" : "Mixed", desc: isZh ? "常用功能 (默认)" : "Balanced (default)" },
+    { id: "daily", label: isZh ? "日常" : "Daily", desc: isZh ? "极简与语音" : "Minimalist & Voice" },
+    { id: "dev", label: isZh ? "开发" : "Dev", desc: isZh ? "工作区与上下文" : "Workspace & Context" },
   ];
   const rows: InlineButton[][] = profiles.map((p) => [
     button(`${p.id === currentProfile ? "✅ " : ""}${p.label} - ${p.desc}`, `set:profile:${p.id}`),
   ]);
-  rows.push([button("‹ Back to Menu", "menu:main")]);
+  rows.push([button(isZh ? "‹ 返回菜单" : "‹ Back to Menu", "menu:main")]);
   return { inline_keyboard: rows };
 }
 
 export function mainInlineKeyboard(context?: AppContext, chatId?: ChatId): InlineKeyboardMarkup {
-  const profile = context && chatId ? (settingsFor(context, chatId).menuProfile || "mixed") : "mixed";
-  const profileBtn = button(`🔄 Profile: ${profileLabel(profile)} ▾`, "menu:profile");
-  const closeBtn = button("❌ Close", "action:cancel");
+  const currentSettings = context && chatId ? settingsFor(context, chatId) : null;
+  const zh = isZh(currentSettings, context, chatId);
+  const profile = currentSettings?.menuProfile || "mixed";
+  const profileBtn = button(zh ? `🔄 模式: ${profileLabel(profile)} ▾` : `🔄 Profile: ${profileLabel(profile)} ▾`, "menu:profile");
+  const closeBtn = button(zh ? "❌ 关闭" : "❌ Close", "action:cancel");
+  const langBtn = button(zh ? "🌐 语言: 中文" : "🌐 Lang: English", "menu:lang");
 
   if (profile === "daily") {
     return {
       inline_keyboard: [
-        [button("🤖 Model", "menu:models"), button("🧠 Effort", "menu:effort")],
-        [button("🎙️ Voice Settings", "menu:voice"), button("📂 History / Resume", "menu:resume")],
-        [profileBtn, closeBtn],
+        [button(zh ? "🤖 模型" : "🤖 Model", "menu:models"), button(zh ? "🧠 思考深度" : "🧠 Effort", "menu:effort")],
+        [button(zh ? "🎙️ 语音设置" : "🎙️ Voice Settings", "menu:voice"), button(zh ? "📂 历史/恢复" : "📂 History / Resume", "menu:resume")],
+        [langBtn, profileBtn],
+        [closeBtn],
       ],
     };
   }
@@ -168,11 +194,12 @@ export function mainInlineKeyboard(context?: AppContext, chatId?: ChatId): Inlin
     const session = context && chatId ? context.state.session(chatId) : null;
     return {
       inline_keyboard: [
-        [button("📁 Workspace", "menu:workspace"), button("📂 Resume Session", "menu:resume")],
-        [button("⚙️ Mode (Plan/Edit)", "menu:mode"), button("🛡️ Sandbox", "menu:sandbox")],
-        [button("🤖 Model", "menu:models"), button("🧠 Effort", "menu:effort")],
-        [button("🛠️ CLI & Tools", "menu:clitools"), button(contextButtonLabel(session), "action:context")],
-        [profileBtn, closeBtn],
+        [button(zh ? "📁 工作区" : "📁 Workspace", "menu:workspace"), button(zh ? "📂 恢复会话" : "📂 Resume Session", "menu:resume")],
+        [button(zh ? "⚙️ 模式(规划/编辑)" : "⚙️ Mode (Plan/Edit)", "menu:mode"), button(zh ? "🛡️ 沙箱保护" : "🛡️ Sandbox", "menu:sandbox")],
+        [button(zh ? "🤖 模型" : "🤖 Model", "menu:models"), button(zh ? "🧠 思考深度" : "🧠 Effort", "menu:effort")],
+        [button(zh ? "🛠️ CLI 与工具" : "🛠️ CLI & Tools", "menu:clitools"), button(contextButtonLabel(session, zh), "action:context")],
+        [langBtn, profileBtn],
+        [closeBtn],
       ],
     };
   }
@@ -180,10 +207,11 @@ export function mainInlineKeyboard(context?: AppContext, chatId?: ChatId): Inlin
   // Mixed / Balanced Profile (Default)
   return {
     inline_keyboard: [
-      [button("🤖 Model", "menu:models"), button("🧠 Effort", "menu:effort")],
-      [button("📁 Workspace", "menu:workspace"), button("📂 Resume Session", "menu:resume")],
-      [button("🎙️ Voice Settings", "menu:voice"), button("🛠️ CLI & Tools", "menu:clitools")],
-      [profileBtn, closeBtn],
+      [button(zh ? "🤖 模型" : "🤖 Model", "menu:models"), button(zh ? "🧠 思考深度" : "🧠 Effort", "menu:effort")],
+      [button(zh ? "📁 工作区" : "📁 Workspace", "menu:workspace"), button(zh ? "📂 恢复会话" : "📂 Resume Session", "menu:resume")],
+      [button(zh ? "🎙️ 语音设置" : "🎙️ Voice Settings", "menu:voice"), button(zh ? "🛠️ CLI 与工具" : "🛠️ CLI & Tools", "menu:clitools")],
+      [langBtn, profileBtn],
+      [closeBtn],
     ],
   };
 }

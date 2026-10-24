@@ -81,6 +81,7 @@ export interface SessionSettings {
   sttLang?: string;
   ttsMode?: "off" | "voice-only" | "voice-and-text" | "auto";
   ttsVoice?: string;
+  language?: "en" | "zh";
 }
 
 export interface Usage {

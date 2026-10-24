@@ -5,9 +5,9 @@ import type { AppContext } from "../context.js";
 import { controllerKey } from "../context.js";
 import { parseCommandArgs } from "../agy-runner.js";
 import { createMainKeyboard } from "../keyboards.js";
-import { effectiveWorkspaceFor, settingsFor } from "../domain/settings.js";
+import { effectiveWorkspaceFor, isZh, saveSettings, settingsFor } from "../domain/settings.js";
 import { sessionInfoHtml } from "../ui/messages.js";
-import { modelKeyboard } from "../ui/inline-keyboards.js";
+import { button, modelKeyboard } from "../ui/inline-keyboards.js";
 import { reply, replyWithHtml } from "../ui/reply.js";
 import { showMain, showResumeMenu } from "../ui/screens.js";
 import { enqueueJob } from "../usecases/enqueue.js";
@@ -16,6 +16,7 @@ import { runCustomAgy } from "../usecases/custom-agy.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
 import { defaultSubagentPoller } from "../usecases/subagent-poller.js";
 import { authorizedMessage } from "./auth.js";
+import { BOT_COMMANDS_ZH } from "../bot.js";
 import { handleCallback } from "./callbacks.js";
 import { handleCommand } from "./commands.js";
 import { createSttService, isWhisperInstalled } from "../stt/stt-service.js";
@@ -356,10 +357,50 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
     const parts = rawText.split(/\s+/);
     const command = parts[0] ? parts[0].toLowerCase().split("@")[0].replace(/_/g, "-") : "";
     if (command === "/agy") { try { void runCustomAgy(context, sessionKey, parseCommandArgs(rawText.slice(parts[0].length))); } catch (error) { await reply(context, sessionKey, `Invalid /agy command: ${(error as Error).message}`, createMainKeyboard(settingsFor(context, sessionKey))); } return; }
+    if (command === "/lang" || command === "/language") {
+      const target = parts[1]?.toLowerCase();
+      const current = settingsFor(context, sessionKey);
+      if (target === "zh" || target === "cn" || target === "chinese") {
+        current.language = "zh";
+        await saveSettings(context, sessionKey, current);
+        const idNum = Number(String(sessionKey).split(":")[0]);
+        if (!isNaN(idNum)) {
+          await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
+        }
+        await replyWithHtml(context, sessionKey, "🌐 界面语言已切换为：<b>简体中文</b>", createMainKeyboard(current));
+        return;
+      }
+      if (target === "en" || target === "english") {
+        current.language = "en";
+        await saveSettings(context, sessionKey, current);
+        const idNum = Number(String(sessionKey).split(":")[0]);
+        if (!isNaN(idNum)) {
+          await context.telegram.deleteMyCommands({ scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
+        }
+        await replyWithHtml(context, sessionKey, "🌐 Interface language switched to: <b>English</b>", createMainKeyboard(current));
+        return;
+      }
+      const zh = isZh(current, context, sessionKey);
+      const keyboard = {
+        inline_keyboard: [
+          [
+            button(`${current.language !== "zh" ? "✅ " : ""}🇬🇧 English (Default)`, "set:lang:en"),
+            button(`${current.language === "zh" ? "✅ " : ""}🇨🇳 中文 (Chinese)`, "set:lang:zh"),
+          ],
+          [button(zh ? "‹ 返回" : "‹ Back", "menu:main")],
+        ],
+      };
+      const text = zh
+        ? `<b>🌐 语言设置 (Language Settings)</b>\n\n当前界面语言：<b>简体中文</b>\n\n快捷切换：<code>/lang en</code> 或 <code>/lang zh</code>`
+        : `<b>🌐 Language Settings</b>\n\nCurrent interface language: <b>English</b>\n\nQuick switch: <code>/lang en</code> or <code>/lang zh</code>`;
+      await replyWithHtml(context, sessionKey, text, keyboard);
+      return;
+    }
     if (command.startsWith("/") && await handleCommand(context, message, command, parts.slice(1))) return;
 
+    const zh = isZh(settingsFor(context, sessionKey), context, sessionKey);
     const buttonText = rawText;
-    if (buttonText === "✨ New session" || buttonText === "✨ New") {
+    if (buttonText === "✨ New session" || buttonText === "✨ New" || buttonText === "✨ 新对话" || buttonText === "✨ 新会话" || buttonText === "新对话" || buttonText === "新会话") {
       context.queue?.cancelForChat(sessionKey);
       defaultSubagentPoller.cancelPolling(sessionKey);
       context.controllers?.get(controllerKey("subagent_poller", sessionKey))?.abort();
@@ -369,26 +410,29 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
       await replyWithHtml(context, sessionKey, sessionInfoHtml(context, sessionKey), createMainKeyboard(settingsFor(context, sessionKey)));
       return;
     }
-    if (buttonText === "🛑 Stop" || buttonText === "🛑 Cancel" || buttonText === "Stop" || buttonText === "Cancel") {
+    if (buttonText === "🛑 Stop" || buttonText === "🛑 Cancel" || buttonText === "Stop" || buttonText === "Cancel" || buttonText === "🛑 停止" || buttonText === "停止" || buttonText === "取消") {
       context.pendingDangerousCommands?.delete(String(sessionKey));
       context.controllers?.get(controllerKey("prompt", sessionKey))?.abort();
       context.controllers?.get(controllerKey("custom", sessionKey))?.abort();
       context.controllers?.get(controllerKey("subagent_poller", sessionKey))?.abort();
       defaultSubagentPoller.cancelPolling(sessionKey);
       const result = context.queue?.cancelForChat(sessionKey);
-      await reply(context, sessionKey, `⛔ Cancelled: ${result?.removed || 0} queued job(s) removed, active AGY process terminated.`, createMainKeyboard(settingsFor(context, sessionKey)));
+      const cancelMsg = zh
+        ? `⛔ 已取消：已移除 ${result?.removed || 0} 个排队任务，当前 AGY 进程已终止。`
+        : `⛔ Cancelled: ${result?.removed || 0} queued job(s) removed, active AGY process terminated.`;
+      await reply(context, sessionKey, cancelMsg, createMainKeyboard(settingsFor(context, sessionKey)));
       return;
     }
-    if (buttonText === "🤖 Model") {
+    if (buttonText === "🤖 Model" || buttonText === "🤖 模型" || buttonText === "模型") {
       await refreshModels(context);
-      await reply(context, sessionKey, "Select a model:", modelKeyboard(context, sessionKey));
+      await reply(context, sessionKey, zh ? "请选择模型：" : "Select a model:", modelKeyboard(context, sessionKey));
       return;
     }
-    if (buttonText === "📋 Menu" || buttonText === "Menu") {
+    if (buttonText === "📋 Menu" || buttonText === "Menu" || buttonText === "📋 菜单" || buttonText === "菜单") {
       await showMain(context, sessionKey);
       return;
     }
-    if (buttonText === "📊 Quota" || buttonText === "📊 Usage / Quota" || buttonText === "📊 Usage") {
+    if (buttonText === "📊 Quota" || buttonText === "📊 Usage / Quota" || buttonText === "📊 Usage" || buttonText === "📊 额度" || buttonText === "额度" || buttonText === "用量") {
       enqueueJob(context, sessionKey, { kind: "usage" });
       return;
     }
@@ -400,7 +444,7 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
       if (PROMPT_DIRECTIVES.has(candidate)) {
         directive = candidate;
       } else {
-        await reply(context, sessionKey, "Unknown command. Use /menu.", createMainKeyboard(settingsFor(context, sessionKey)));
+        await reply(context, sessionKey, zh ? "未知命令。请使用 /menu 打开控制面板。" : "Unknown command. Use /menu.", createMainKeyboard(settingsFor(context, sessionKey)));
         return;
       }
     }

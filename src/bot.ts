@@ -37,6 +37,7 @@ export function createAppServices(base: BaseServices): AppContext {
 const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "menu", description: "Show the bottom control keyboard" },
   { command: "new", description: "Start a new AGY conversation" },
+  { command: "lang", description: "Switch language / 语言切换" },
   { command: "resume", description: "Resume previous conversation from database" },
   { command: "usage", description: "Check live models & quota via PTY" },
   { command: "credits", description: "Check live AGY credits via PTY" },
@@ -77,6 +78,52 @@ const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "restart", description: "Restart the AGY Telegram service" },
   { command: "agy", description: "Run a custom non-interactive AGY command" },
   { command: "agy_confirm", description: "Confirm a pending AGY command" },
+];
+
+export const BOT_COMMANDS_ZH: Array<{ command: string; description: string }> = [
+  { command: "menu", description: "打开底部快捷控制键盘" },
+  { command: "new", description: "开启新的 AGY 对话会话" },
+  { command: "lang", description: "切换界面语言 (中文 / English)" },
+  { command: "resume", description: "浏览并恢复历史会话" },
+  { command: "usage", description: "通过 PTY 查询实时模型与配额用量" },
+  { command: "credits", description: "通过 PTY 查询 AGY 积分与额度" },
+  { command: "context", description: "查看当前会话活动上下文与 Token 占比" },
+  { command: "tokens", description: "查看 Token 用量统计与轮次" },
+  { command: "quota", description: "/usage 的快捷别名" },
+  { command: "status", description: "查看当前任务排队与执行状态" },
+  { command: "cancel", description: "取消排队任务与终止当前执行" },
+  { command: "model", description: "选择或切换当前 AI 模型" },
+  { command: "effort", description: "设置思考深度 (low / medium / high)" },
+  { command: "mode", description: "切换执行模式 (plan / accept-edits)" },
+  { command: "sandbox", description: "开启或关闭终端沙箱保护" },
+  { command: "verbose", description: "设置执行进度详细程度 (detailed / compact / silent)" },
+  { command: "savedefault", description: "将当前设置保存为全局永久默认配置" },
+  { command: "session", description: "查看当前会话设置与工作区状态" },
+  { command: "workspace", description: "查看或切换当前项目工作区目录" },
+  { command: "learn", description: "从近期对话中沉淀复用规则与技能" },
+  { command: "compact", description: "压缩上下文并创建快照以节省 Token" },
+  { command: "help", description: "显示所有支持的指令说明" },
+  { command: "agents", description: "查看可用自定义 AGY Agent 列表" },
+  { command: "agent", description: "选择指定的 AGY Agent" },
+  { command: "project", description: "设置 AGY 关联项目" },
+  { command: "add_dir", description: "添加 AGY 工作区挂载目录" },
+  { command: "output_format", description: "设置输出格式 (text / json / stream-json)" },
+  { command: "json_schema", description: "设置 AGY JSON Schema 校验规范" },
+  { command: "log_file", description: "设置 AGY 输出日志文件路径" },
+  { command: "print_timeout", description: "设置 AGY 单次输出最大超时时间" },
+  { command: "continue", description: "开启或关闭自动继续上轮对话" },
+  { command: "new_project", description: "开启或关闭新建项目模式" },
+  { command: "disable_slash_commands", description: "开启或关闭斜杠指令与技能展开" },
+  { command: "changelog", description: "查看 AGY CLI 更新日志" },
+  { command: "plugins", description: "查看已安装的 AGY 插件列表" },
+  { command: "skills", description: "查看可用技能 (工作区、全局、内置)" },
+  { command: "mcp", description: "查看已配置的 MCP 服务器列表" },
+  { command: "cli_help", description: "查看 AGY 原生 CLI 帮助信息" },
+  { command: "version", description: "查看 AGY CLI 版本号" },
+  { command: "update", description: "从 GitHub 更新 Bot 源码并重启" },
+  { command: "restart", description: "重启 AGY Telegram 系统服务" },
+  { command: "agy", description: "执行非交互式原生 AGY 命令行指令" },
+  { command: "agy_confirm", description: "二次确认并执行高危 AGY 命令" },
 ];
 
 export async function announcePendingRestartNotice(context: AppContext): Promise<void> {
@@ -184,7 +231,18 @@ export function createBot(context: AppContext): { start(): Promise<void>; handle
     console.log(`agy-telegram started; workspace=${context.config.agy.workspace}; privateOnly=${context.config.telegram.privateOnly}`);
     await cleanupStaleTempFiles(context.config.tempDir).catch((err) => console.error(`cleanupStaleTempFiles failed: ${(err as Error).message}`));
     await refreshModels(context).catch((error) => console.error(`refreshModels failed: ${(error as Error).message}`));
-    await context.telegram.setMyCommands(BOT_COMMANDS).catch((error: unknown) => console.error(`setMyCommands failed: ${(error as Error).message}`));
+    await context.telegram.setMyCommands(BOT_COMMANDS).catch((error: unknown) => console.error(`setMyCommands default failed: ${(error as Error).message}`));
+    await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { language_code: "zh" }).catch((error: unknown) => console.error(`setMyCommands zh failed: ${(error as Error).message}`));
+
+    // Sync chat-specific commands for existing sessions
+    for (const [chatId, session] of Object.entries(context.state.allSessions)) {
+      if (session.settings?.language === "zh") {
+        const idNum = Number(chatId.split(":")[0]);
+        if (!isNaN(idNum)) {
+          await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
+        }
+      }
+    }
 
     // 1. Process pending restart / update notices
     await announcePendingRestartNotice(context);

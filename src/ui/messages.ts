@@ -2,7 +2,7 @@ import { formatRelativeTime, type ConversationPage } from "../db.js";
 import type { AppContext } from "../context.js";
 import { getModelMaxContext, modelLabel, renderContextProgressBar } from "../models.js";
 import { escapeHtml } from "../telegram.js";
-import { settingsFor } from "../domain/settings.js";
+import { isZh, settingsFor } from "../domain/settings.js";
 import type { ChatId, SessionSettings, Usage } from "../types.js";
 
 export function settingsText(settings: SessionSettings): string {
@@ -17,9 +17,24 @@ export function settingsText(settings: SessionSettings): string {
 
 export function sessionInfoHtml(context: AppContext, chatId: ChatId): string {
   const settings = settingsFor(context, chatId);
+  const zh = isZh(settings, context, chatId);
   const maxContext = getModelMaxContext(settings.model);
-  const contextStr = maxContext ? `${maxContext.toLocaleString()} tokens` : "Default";
-  const modeStr = settings.mode === "accept-edits" ? "edit (accept-edits)" : (settings.mode || "accept-edits");
+  const contextStr = maxContext ? `${maxContext.toLocaleString()} tokens` : (zh ? "默认" : "Default");
+  const modeStr = settings.mode === "accept-edits" ? (zh ? "编辑模式 (accept-edits)" : "edit (accept-edits)") : (settings.mode || "accept-edits");
+
+  if (zh) {
+    return [
+      "✨ <b>已开启新的 AGY 对话。</b>\n",
+      `• <b>模型:</b> <code>${escapeHtml(modelLabel(settings.model))}</code>`,
+      `• <b>思考深度:</b> <code>${escapeHtml(settings.effort || "high")}</code>`,
+      `• <b>运行模式:</b> <code>${escapeHtml(modeStr)}</code>`,
+      `• <b>详细程度:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
+      `• <b>上下文上限:</b> <code>${escapeHtml(contextStr)}</code>`,
+      `• <b>沙箱保护:</b> <code>${settings.sandbox ? "已开启" : "已关闭"}</code>`,
+      settings.workspace ? `• <b>工作区:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
+      context.config.agy.project ? `• <b>项目:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
+    ].filter(Boolean).join("\n");
+  }
 
   return [
     "✨ <b>New AGY conversation started.</b>\n",
@@ -75,11 +90,15 @@ export function sessionText(context: AppContext, chatId: ChatId): string {
   return lines.join("\n");
 }
 
-export function resumeMessageText(pageData: ConversationPage): string {
+export function resumeMessageText(pageData: ConversationPage, zh = false): string {
   if (pageData.total === 0 || pageData.items.length === 0) {
-    return "<b>📂 AGY Sessions</b>\n\nNo saved conversations found in AGY database.";
+    return zh
+      ? "<b>📂 AGY 历史会话</b>\n\n未在 AGY 数据库中找到已保存的会话。"
+      : "<b>📂 AGY Sessions</b>\n\nNo saved conversations found in AGY database.";
   }
-  return `<b>📂 AGY Sessions</b>\nPage ${pageData.page + 1}/${pageData.totalPages} (${pageData.total} total)\nSelect a session to resume:`;
+  return zh
+    ? `<b>📂 AGY 历史会话</b>\n第 ${pageData.page + 1}/${pageData.totalPages} 页 (共 ${pageData.total} 条)\n请选择要恢复的会话：`
+    : `<b>📂 AGY Sessions</b>\nPage ${pageData.page + 1}/${pageData.totalPages} (${pageData.total} total)\nSelect a session to resume:`;
 }
 
 export function usageReport(context: AppContext, chatId: ChatId): string {

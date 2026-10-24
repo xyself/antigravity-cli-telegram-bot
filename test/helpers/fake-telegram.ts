@@ -79,8 +79,16 @@ export class FakeTelegramClient {
     return true;
   }
 
-  public async setMyCommands(commands: Array<{ command: string; description: string }>): Promise<boolean> {
-    this.recordAndMaybeFail("setMyCommands", { commands });
+  public async setMyCommands(
+    commands: Array<{ command: string; description: string }>,
+    options?: { language_code?: string; scope?: unknown }
+  ): Promise<boolean> {
+    this.recordAndMaybeFail("setMyCommands", { commands, ...(options || {}) });
+    return true;
+  }
+
+  public async deleteMyCommands(options?: { language_code?: string; scope?: unknown }): Promise<boolean> {
+    this.recordAndMaybeFail("deleteMyCommands", options || {});
     return true;
   }
 

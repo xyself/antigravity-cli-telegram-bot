@@ -269,7 +269,15 @@ export class TelegramClient {
     }
   }
   public answerCallbackQuery(callbackQueryId: string, text?: string): Promise<boolean> { return this.call<boolean>("answerCallbackQuery", { callback_query_id: callbackQueryId, ...(text ? { text } : {}) }, undefined, 0).catch(() => false); }
-  public setMyCommands(commands: Array<{ command: string; description: string }>): Promise<boolean> { return this.call<boolean>("setMyCommands", { commands }); }
+  public setMyCommands(
+    commands: Array<{ command: string; description: string }>,
+    options?: { language_code?: string; scope?: unknown }
+  ): Promise<boolean> {
+    return this.call<boolean>("setMyCommands", { commands, ...(options || {}) });
+  }
+  public deleteMyCommands(options?: { language_code?: string; scope?: unknown }): Promise<boolean> {
+    return this.call<boolean>("deleteMyCommands", options || {});
+  }
   public async editForumTopic(chatId: number | string, messageThreadId: number, name: string): Promise<boolean> {
     try {
       if (messageThreadId === 1) {

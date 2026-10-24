@@ -33,7 +33,7 @@ import { enqueueJob } from "../usecases/enqueue.js";
 import { refreshModels } from "../usecases/model-selection.js";
 import { handleSkillsCommand } from "../usecases/skills-command.js";
 import { handleMcpCommand } from "../usecases/mcp-command.js";
-import { settingsFor } from "../domain/settings.js";
+import { isZh, settingsFor } from "../domain/settings.js";
 import type { ChatId, InlineKeyboardMarkup } from "../types.js";
 
 export function showMain(context: AppContext, chatId: ChatId, messageId?: number): Promise<void> {
@@ -41,7 +41,8 @@ export function showMain(context: AppContext, chatId: ChatId, messageId?: number
 }
 
 async function showMainInternal(context: AppContext, chatId: ChatId, messageId?: number): Promise<void> {
-  const text = "⚙️ AGY Control Panel";
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
+  const text = zh ? "⚙️ AGY 控制面板" : "⚙️ AGY Control Panel";
   const keyboard = mainInlineKeyboard(context, chatId);
   if (messageId) {
     await context.telegram.editMessageText(chatId, messageId, text, keyboard);
@@ -76,9 +77,10 @@ export async function refreshActiveMenu(context: AppContext, chatId: ChatId): Pr
 }
 
 export async function showResumeMenu(context: AppContext, chatId: ChatId, page = 0, messageId?: number): Promise<void> {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   const pageData = context.convDb.getConversations(page, 5);
-  const text = resumeMessageText(pageData);
-  const keyboard = resumeKeyboard(pageData.page, pageData.totalPages, pageData.items);
+  const text = resumeMessageText(pageData, zh);
+  const keyboard = resumeKeyboard(pageData.page, pageData.totalPages, pageData.items, zh);
   if (messageId) {
     try {
       await context.telegram.editMessageText(chatId, messageId, text, keyboard, "HTML");
@@ -144,17 +146,18 @@ export async function showCliOption(context: AppContext, chatId: ChatId, message
 }
 
 export async function showMenu(context: AppContext, chatId: ChatId, messageId: number, kind: string, page = 0): Promise<void> {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
   if (kind === "main") return showMain(context, chatId, messageId);
   await context.state.setSession(chatId, { activeMenuScreen: kind });
   if (kind === "model" || kind === "models") {
     await refreshModels(context);
-    return context.telegram.editMessageText(chatId, messageId, "Select a model:", modelKeyboard(context, chatId, page));
+    return context.telegram.editMessageText(chatId, messageId, zh ? "请选择模型：" : "Select a model:", modelKeyboard(context, chatId, page));
   }
-  if (kind === "effort") return context.telegram.editMessageText(chatId, messageId, "Select reasoning effort:", effortKeyboard(context, chatId));
-  if (kind === "mode") return context.telegram.editMessageText(chatId, messageId, "Select execution mode:", modeKeyboard(context, chatId));
-  if (kind === "sandbox") return context.telegram.editMessageText(chatId, messageId, `Sandbox is ${settingsFor(context, chatId).sandbox ? "enabled" : "disabled"}.`, sandboxKeyboard(context, chatId));
-  if (kind === "verbose") return context.telegram.editMessageText(chatId, messageId, "Select progress verbosity during execution:", verboseKeyboard(context, chatId));
-  if (kind === "workspace" || kind === "workspaces") return context.telegram.editMessageText(chatId, messageId, "Select a project workspace:", workspaceKeyboard(context, chatId, page));
+  if (kind === "effort") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择思考深度：" : "Select reasoning effort:", effortKeyboard(context, chatId));
+  if (kind === "mode") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择执行模式：" : "Select execution mode:", modeKeyboard(context, chatId));
+  if (kind === "sandbox") return context.telegram.editMessageText(chatId, messageId, zh ? `沙箱状态：${settingsFor(context, chatId).sandbox ? "已开启" : "已关闭"}。` : `Sandbox is ${settingsFor(context, chatId).sandbox ? "enabled" : "disabled"}.`, sandboxKeyboard(context, chatId));
+  if (kind === "verbose") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择执行过程详细程度：" : "Select progress verbosity during execution:", verboseKeyboard(context, chatId));
+  if (kind === "workspace" || kind === "workspaces") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择项目工作区：" : "Select a project workspace:", workspaceKeyboard(context, chatId, page));
   if (kind === "session") return context.telegram.editMessageText(chatId, messageId, sessionText(context, chatId), backKeyboard());
   if (kind === "resume") return showResumeMenu(context, chatId, page, messageId);
   if (kind === "usage") { enqueueJob(context, chatId, { kind: "usage" }); return; }
@@ -184,6 +187,28 @@ export async function showMenu(context: AppContext, chatId: ChatId, messageId: n
   if (kind === "profile") {
     const current = settingsFor(context, chatId).menuProfile || "mixed";
     return context.telegram.editMessageText(chatId, messageId, `<b>Menu Profile</b>\n\nChoose the interface density and button layout for <code>/menu</code>:\n\n• <b>Mixed</b>: Balanced 4-row layout (default)\n• <b>Daily</b>: Minimalist 3-row layout for fast chat & voice\n• <b>Dev</b>: 5-row layout with Workspace, Modes, CLI & Context`, menuProfileKeyboard(current), "HTML");
+  }
+  if (kind === "lang" || kind === "language") {
+    const current = settingsFor(context, chatId);
+    const zh = isZh(current, context, chatId);
+    const keyboard = {
+      inline_keyboard: [
+        [
+          button(`${current.language !== "zh" ? "✅ " : ""}🇬🇧 English (Default)`, "set:lang:en"),
+          button(`${current.language === "zh" ? "✅ " : ""}🇨🇳 中文 (Chinese)`, "set:lang:zh"),
+        ],
+        [button(zh ? "‹ 返回" : "‹ Back", "menu:main")],
+      ],
+    };
+    return context.telegram.editMessageText(
+      chatId,
+      messageId,
+      zh
+        ? `<b>🌐 语言设置 (Language Settings)</b>\n\n当前界面语言：<b>简体中文</b>\n\n请选择你偏好的交互语言：`
+        : `<b>🌐 Language Settings</b>\n\nCurrent interface language: <b>English</b>\n\nSelect your preferred language:`,
+      keyboard,
+      "HTML"
+    );
   }
   if (kind === "modesandbox") return context.telegram.editMessageText(chatId, messageId, "Configure execution mode, sandbox, verbosity, and session details:", modeSandboxKeyboard(context, chatId));
   if (kind === "clitools") return context.telegram.editMessageText(chatId, messageId, "CLI options, telemetry, and system maintenance:", cliToolsKeyboard(context, chatId));

@@ -16,6 +16,7 @@ import {
 } from "../ui/inline-keyboards.js";
 import { cliOutput, CLI_COMMANDS, showCliOption, showMain, showMenu, showResumeMenu, type CliCommand } from "../ui/screens.js";
 import { sessionInfoHtml } from "../ui/messages.js";
+import { reply } from "../ui/reply.js";
 import { enqueueJob } from "../usecases/enqueue.js";
 import { runCustomAgy } from "../usecases/custom-agy.js";
 import { persistDefaultSettings } from "../usecases/default-settings.js";
@@ -24,6 +25,7 @@ import { selectModel } from "../usecases/model-selection.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
 import type { TelegramCallbackQuery } from "../types.js";
 import { isWhisperInstalled, warmupWhisperLocal } from "../stt/stt-service.js";
+import { BOT_COMMANDS_ZH } from "../bot.js";
 import { authorizedCallback } from "./auth.js";
 import { parseCallbackAction } from "./callback-parser.js";
 
@@ -159,6 +161,30 @@ function isOutputFormat(value: string): value is SettingsOutputFormat {
 
 async function applySettingChange(context: AppContext, chatId: import("../types.js").ChatId, messageId: number, key: string, value: string): Promise<void> {
   const settings = settingsFor(context, chatId);
+  if (key === "lang" || key === "language") {
+    if (value === "zh" || value === "en") {
+      settings.language = value;
+      await saveSettings(context, chatId, settings);
+      const zh = value === "zh";
+      const idNum = Number(String(chatId).split(":")[0]);
+      if (!isNaN(idNum)) {
+        if (zh) {
+          await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
+        } else {
+          await context.telegram.deleteMyCommands({ scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
+        }
+      }
+      await context.telegram.editMessageText(
+        chatId,
+        messageId,
+        zh ? "🌐 界面语言已切换为：<b>简体中文</b>" : "🌐 Interface language switched to: <b>English</b>",
+        backKeyboard(zh),
+        "HTML"
+      );
+      await reply(context, chatId, zh ? "快捷键盘已更新为中文。" : "Keyboard updated to English.", createMainKeyboard(settings));
+      return;
+    }
+  }
   if (key === "model") {
     const outcome = await selectModel(context, chatId, value);
     if (outcome) {

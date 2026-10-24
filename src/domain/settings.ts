@@ -25,6 +25,7 @@ export function settingsFor(context: AppContext, chatId: ChatId): SessionSetting
     sttLang: config.stt?.language ?? "en",
     ttsMode: config.tts?.mode ?? "off",
     ttsVoice: config.tts?.voice ?? "en-US-AndrewMultilingualNeural",
+    language: (process.env.BOT_LANGUAGE || "").toLowerCase().startsWith("zh") ? "zh" : "en",
   };
   const stored = context.state.session(chatId)?.settings || {};
   const settings: SessionSettings = {
@@ -52,9 +53,19 @@ export function settingsFor(context: AppContext, chatId: ChatId): SessionSetting
     sttLang: typeof stored.sttLang === "string" && stored.sttLang.trim() ? stored.sttLang.trim() : defaults.sttLang,
     ttsMode: stored.ttsMode === "off" || stored.ttsMode === "voice-only" || stored.ttsMode === "voice-and-text" || stored.ttsMode === "auto" ? stored.ttsMode : defaults.ttsMode,
     ttsVoice: typeof stored.ttsVoice === "string" && stored.ttsVoice.trim() ? stored.ttsVoice.trim() : defaults.ttsVoice,
+    language: stored.language === "zh" || stored.language === "en" ? stored.language : defaults.language,
   };
   if (config.agy.sandbox && !config.agy.allowSandboxDisable) settings.sandbox = true;
   return settings;
+}
+
+export function isZh(settings?: SessionSettings | null, context?: AppContext, chatId?: ChatId): boolean {
+  if (settings?.language) return settings.language === "zh";
+  if (context && chatId) {
+    const s = settingsFor(context, chatId);
+    if (s.language) return s.language === "zh";
+  }
+  return (process.env.BOT_LANGUAGE || "").toLowerCase().startsWith("zh");
 }
 
 export function effectiveWorkspaceFor(context: AppContext, chatId: ChatId): string {

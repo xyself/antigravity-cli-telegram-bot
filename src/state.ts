@@ -24,6 +24,7 @@ export class StateStore {
   }
 
   public session(chatId: ChatId): SessionState | null { return this.data.sessions[String(chatId)] || null; }
+  public get allSessions(): Record<string, SessionState> { return this.data.sessions; }
   public async resetSession(chatId: ChatId, preserveSettings = true, preserveWorkspace?: boolean): Promise<void> {
     const existing = this.data.sessions[String(chatId)];
     const isTopic = String(chatId).includes(":");

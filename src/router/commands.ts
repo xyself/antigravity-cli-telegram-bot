@@ -4,8 +4,9 @@ import { isEffort, isMode, isVerbose } from "../config.js";
 import { getActiveModels } from "../models.js";
 import { runAgyCommand } from "../agy-runner.js";
 import { createMainKeyboard } from "../keyboards.js";
-import { saveSettings, settingsFor, type SettingsOutputFormat } from "../domain/settings.js";
+import { isZh, saveSettings, settingsFor, type SettingsOutputFormat } from "../domain/settings.js";
 import {
+  button,
   effortKeyboard,
   modeKeyboard,
   modelKeyboard,
