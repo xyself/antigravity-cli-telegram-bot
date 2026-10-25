@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { formatBytes, handleBackupCommand, resolveAgyDataDir } from "../src/usecases/backup-command.js";
+import { formatBytes, handleBackupCommand, resolveAgyDataDir, resolveGeminiRootDir } from "../src/usecases/backup-command.js";
 import { asAppContext, createHarness } from "./helpers/fixtures.js";
 
 test("formatBytes formats byte sizes accurately", () => {
@@ -15,6 +15,12 @@ test("resolveAgyDataDir returns an existing or fallback directory", () => {
   const dir = resolveAgyDataDir();
   assert.ok(typeof dir === "string" && dir.length > 0);
   assert.ok(dir.includes(".gemini/antigravity-cli"));
+});
+
+test("resolveGeminiRootDir returns an existing or fallback directory", () => {
+  const dir = resolveGeminiRootDir();
+  assert.ok(typeof dir === "string" && dir.length > 0);
+  assert.ok(dir.includes(".gemini"));
 });
 
 test("handleBackupCommand packages agy data and sends document file", async () => {
@@ -34,6 +40,7 @@ test("handleBackupCommand packages agy data and sends document file", async () =
     assert.ok(docPayload, "sendDocumentFile should have been called");
     assert.equal(docPayload.chat_id, chatId);
     assert.ok(String(docPayload.caption).includes("AGY"));
+    assert.ok(String(docPayload.caption).includes("MCP"));
 
     // Verify temp archive was cleaned up
     const filePath = String(docPayload.file_path);
