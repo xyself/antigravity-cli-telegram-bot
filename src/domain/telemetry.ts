@@ -18,6 +18,7 @@ export interface TelemetryData {
   toolCalls: number;
   durationMs?: number | null;
   model: string;
+  isZh?: boolean;
 }
 
 export type HealthStatus = "nominal" | "vigilance" | "alert";
@@ -33,7 +34,8 @@ export interface MetricDiagnostic {
 export function evaluateActiveContext(
   activeTokens: number | null | undefined,
   maxTokens: number,
-  explicitPercentage?: number | null
+  explicitPercentage?: number | null,
+  isZh?: boolean
 ): { formatted: string; status: HealthStatus; comment: string; hasWarning: boolean; pct: number } {
   const safeMax = maxTokens > 0 ? maxTokens : 1_000_000;
   if (activeTokens != null && activeTokens > 0) {
@@ -42,20 +44,20 @@ export function evaluateActiveContext(
       ? Math.min(100, Math.max(0, Math.round(explicitPercentage)))
       : calculatedPct;
     let status: HealthStatus = "nominal";
-    let comment = "Nominal";
+    let comment = isZh ? "正常良好" : "Nominal";
     let hasWarning = false;
 
     if (pct > 70) {
       status = "alert";
-      comment = "Alert (run /compact or /new)";
+      comment = isZh ? "预警（建议运行 /compact 压缩或 /new）" : "Alert (run /compact or /new)";
       hasWarning = true;
     } else if (pct >= 40) {
       status = "vigilance";
-      comment = "Vigilance (consider compaction or archiving)";
+      comment = isZh ? "注意（建议考虑压缩或开启新会话）" : "Vigilance (consider compaction or archiving)";
     }
 
     return {
-      formatted: `${activeTokens.toLocaleString("en-US")} / ${safeMax.toLocaleString("en-US")} tokens (${pct}%)`,
+      formatted: `${activeTokens.toLocaleString("en-US")} / ${safeMax.toLocaleString("en-US")} ${isZh ? "Token" : "tokens"} (${pct}%)`,
       status,
       comment,
       hasWarning,
@@ -66,7 +68,7 @@ export function evaluateActiveContext(
   return {
     formatted: "N/A",
     status: "nominal",
-    comment: "Not reported",
+    comment: isZh ? "未上报" : "Not reported",
     hasWarning: false,
     pct: 0,
   };
@@ -74,7 +76,8 @@ export function evaluateActiveContext(
 
 export function evaluatePromptCache(
   cacheReadTokens: number | undefined,
-  inputTokens: number | undefined
+  inputTokens: number | undefined,
+  isZh?: boolean
 ): { formatted: string; status: HealthStatus; comment: string; hitRate: number } {
   const cacheRead = cacheReadTokens ?? 0;
   const input = inputTokens ?? 0;
@@ -83,21 +86,21 @@ export function evaluatePromptCache(
   if (total > 0) {
     const hitRate = Math.round((cacheRead / total) * 100);
     let status: HealthStatus = "nominal";
-    let comment = "Warm cache (optimal)";
+    let comment = isZh ? "热缓存（最优命中）" : "Warm cache (optimal)";
 
     if (hitRate >= 80) {
       status = "nominal";
-      comment = "Warm cache (optimal)";
+      comment = isZh ? "热缓存（最优命中）" : "Warm cache (optimal)";
     } else if (hitRate >= 30) {
       status = "vigilance";
-      comment = "Moderate hit rate";
+      comment = isZh ? "命中率中等" : "Moderate hit rate";
     } else {
       status = "alert";
-      comment = "Cold cache / cache miss";
+      comment = isZh ? "冷缓存 / 未命中" : "Cold cache / cache miss";
     }
 
     return {
-      formatted: `${hitRate}% hit rate`,
+      formatted: `${hitRate}% ${isZh ? "命中率" : "hit rate"}`,
       status,
       comment,
       hitRate,
@@ -105,107 +108,110 @@ export function evaluatePromptCache(
   }
 
   return {
-    formatted: "0% hit rate",
+    formatted: `0% ${isZh ? "命中率" : "hit rate"}`,
     status: "alert",
-    comment: "Cold cache / cache miss",
+    comment: isZh ? "冷缓存 / 未命中" : "Cold cache / cache miss",
     hitRate: 0,
   };
 }
 
 export function evaluateThinkingTokens(
-  thinkingTokens: number | undefined
+  thinkingTokens: number | undefined,
+  isZh?: boolean
 ): { formatted: string; status: HealthStatus; comment: string } {
   if (thinkingTokens != null && thinkingTokens > 0) {
     let status: HealthStatus = "nominal";
-    let comment = "Balanced reasoning";
+    let comment = isZh ? "均衡思考" : "Balanced reasoning";
 
     if (thinkingTokens > 4000) {
       status = "alert";
-      comment = "Extended reasoning (check prompt ambiguity)";
+      comment = isZh ? "深度长思考（检查提示词复杂度）" : "Extended reasoning (check prompt ambiguity)";
     } else if (thinkingTokens > 2500) {
       status = "vigilance";
-      comment = "Deep reasoning";
+      comment = isZh ? "深度思考" : "Deep reasoning";
     } else if (thinkingTokens >= 500) {
       status = "nominal";
-      comment = "Balanced reasoning";
+      comment = isZh ? "均衡思考" : "Balanced reasoning";
     } else {
       status = "vigilance";
-      comment = "Fast / minimal reasoning";
+      comment = isZh ? "极简 / 快速思考" : "Fast / minimal reasoning";
     }
 
     return {
-      formatted: `${thinkingTokens.toLocaleString("en-US")} tokens`,
+      formatted: `${thinkingTokens.toLocaleString("en-US")} ${isZh ? "Token" : "tokens"}`,
       status,
       comment,
     };
   }
 
   return {
-    formatted: "0 tokens",
+    formatted: `0 ${isZh ? "Token" : "tokens"}`,
     status: "nominal",
-    comment: "Minimal / fast reasoning",
+    comment: isZh ? "极简 / 快速思考" : "Minimal / fast reasoning",
   };
 }
 
 export function evaluateToolCalls(
-  toolCalls: number
+  toolCalls: number,
+  isZh?: boolean
 ): { formatted: string; status: HealthStatus; comment: string; hasWarning: boolean; collapsedLabel: string } {
   if (toolCalls === 0) {
     return {
-      formatted: "0 executions",
+      formatted: isZh ? "0 次执行" : "0 executions",
       status: "nominal",
-      comment: "Conceptual answer (no files or commands checked on server)",
+      comment: isZh ? "纯文本概念回答（未在服务器执行命令或文件操作）" : "Conceptual answer (no files or commands checked on server)",
       hasWarning: false,
-      collapsedLabel: "0 tools",
+      collapsedLabel: isZh ? "0 个工具" : "0 tools",
     };
   }
 
   if (toolCalls <= 4) {
     return {
-      formatted: `${toolCalls} execution${toolCalls > 1 ? "s" : ""}`,
+      formatted: isZh ? `${toolCalls} 次执行` : `${toolCalls} execution${toolCalls > 1 ? "s" : ""}`,
       status: "nominal",
-      comment: "Nominal (verified on server)",
+      comment: isZh ? "正常（已在服务器执行验证）" : "Nominal (verified on server)",
       hasWarning: false,
-      collapsedLabel: `${toolCalls} tool${toolCalls > 1 ? "s" : ""}`,
+      collapsedLabel: isZh ? `${toolCalls} 个工具` : `${toolCalls} tool${toolCalls > 1 ? "s" : ""}`,
     };
   }
 
   if (toolCalls <= 10) {
     return {
-      formatted: `${toolCalls} executions`,
+      formatted: isZh ? `${toolCalls} 次执行` : `${toolCalls} executions`,
       status: "vigilance",
-      comment: "High tool activity",
+      comment: isZh ? "高工具活跃度" : "High tool activity",
       hasWarning: false,
-      collapsedLabel: `${toolCalls} tools`,
+      collapsedLabel: isZh ? `${toolCalls} 个工具` : `${toolCalls} tools`,
     };
   }
 
   return {
-    formatted: `${toolCalls} executions ⚠️`,
+    formatted: isZh ? `${toolCalls} 次执行 ⚠️` : `${toolCalls} executions ⚠️`,
     status: "alert",
-    comment: "Heavy tool chain (verify loop)",
+    comment: isZh ? "重度工具链（注意是否存在死循环）" : "Heavy tool chain (verify loop)",
     hasWarning: true,
-    collapsedLabel: `${toolCalls} tools ⚠️`,
+    collapsedLabel: isZh ? `${toolCalls} 个工具 ⚠️` : `${toolCalls} tools ⚠️`,
   };
 }
 
 export function evaluateResponseSize(
-  outputTokens: number | undefined
+  outputTokens: number | undefined,
+  isZh?: boolean
 ): { formatted: string; status: HealthStatus; comment: string } {
   if (outputTokens != null && outputTokens > 0) {
     let status: HealthStatus = "nominal";
-    let comment = "Concise output";
+    let comment = isZh ? "输出精炼简短" : "Concise output";
 
     if (outputTokens > 1200) {
       status = "alert";
-      comment = "Verbose output (consider asking for summary)";
+      comment = isZh ? "输出较长（可要求简要总结）" : "Verbose output (consider asking for summary)";
     } else if (outputTokens >= 600) {
       status = "vigilance";
-      comment = "Detailed output";
+      comment = isZh ? "输出详尽" : "Detailed output";
     }
 
     return {
-      formatted: `${outputTokens.toLocaleString("en-US")} tokens`,
+      formatted: `${outputTokens.toLocaleString("en-US")} ${isZh ? "Token" : "tokens"}`,
       status,
       comment,
     };
@@ -214,45 +220,37 @@ export function evaluateResponseSize(
   return {
     formatted: "N/A",
     status: "nominal",
-    comment: "Output size not reported",
+    comment: isZh ? "未上报输出大小" : "Output size not reported",
   };
 }
 
-export function formatSessionDuration(durationMs: number): string {
+export function formatSessionDuration(durationMs: number, isZh?: boolean): string {
   const totalSec = Math.round(durationMs / 1000);
   if (totalSec < 60) {
     const secStr = (durationMs / 1000).toFixed(1);
-    return `${secStr}s total`;
+    return isZh ? `${secStr}秒 总计` : `${secStr}s total`;
   }
   const minutes = Math.floor(totalSec / 60);
   const seconds = totalSec % 60;
   if (minutes < 60) {
-    return `${minutes}m ${seconds}s total`;
+    return isZh ? `${minutes}分 ${seconds}秒 总计` : `${minutes}m ${seconds}s total`;
   }
   const hours = Math.floor(minutes / 60);
   const remMinutes = minutes % 60;
-  return `${hours}h ${remMinutes}m total`;
+  return isZh ? `${hours}小时 ${remMinutes}分钟 总计` : `${hours}h ${remMinutes}m total`;
 }
 
 /**
  * Builds the native Telegram markdown expandable blockquote footer for telemetry.
- * Output format:
- * **> 📊 Telemetry: 45k ctx (5%) · 2 tools · 1.4s
- * **>
- * **> • **Active context:** 45,120 / 1,000,000 tokens (5%) — Nominal
- * **> • **Prompt cache:** 92% hit rate — Warm cache (optimal)
- * **> • **Thinking tokens:** 1,240 tokens — Balanced reasoning
- * **> • **Tool calls:** 2 executions — Nominal (verified on server)
- * **> • **Response size:** 280 tokens — Concise output
- * **> • **Model & duration:** Gemini 3.8 Flash · 1.4s
  */
 export function buildTelemetryQuoteBlock(data: TelemetryData): string {
+  const isZh = data.isZh === true;
   const durationSec = data.durationMs != null ? `${(data.durationMs / 1000).toFixed(1)}s` : "0.0s";
-  const contextEval = evaluateActiveContext(data.activeTokens, data.maxTokens, data.contextPercentage);
-  const cacheEval = evaluatePromptCache(data.cacheReadTokens, data.inputTokens);
-  const thinkingEval = evaluateThinkingTokens(data.thinkingTokens);
-  const toolEval = evaluateToolCalls(data.toolCalls);
-  const responseEval = evaluateResponseSize(data.outputTokens);
+  const contextEval = evaluateActiveContext(data.activeTokens, data.maxTokens, data.contextPercentage, isZh);
+  const cacheEval = evaluatePromptCache(data.cacheReadTokens, data.inputTokens, isZh);
+  const thinkingEval = evaluateThinkingTokens(data.thinkingTokens, isZh);
+  const toolEval = evaluateToolCalls(data.toolCalls, isZh);
+  const responseEval = evaluateResponseSize(data.outputTokens, isZh);
 
   // Net context delta added to active context this turn
   const growthTokens = data.contextGrowthTokens != null
@@ -260,49 +258,67 @@ export function buildTelemetryQuoteBlock(data: TelemetryData): string {
     : (data.activeTokens ?? 0);
 
   const growthLabel = growthTokens > 0
-    ? `+${formatTokenCount(growthTokens)} ctx`
-    : (growthTokens < 0 ? `-${formatTokenCount(Math.abs(growthTokens))} ctx` : "0 ctx");
+    ? `+${formatTokenCount(growthTokens)} ${isZh ? "上下文" : "ctx"}`
+    : (growthTokens < 0 ? `-${formatTokenCount(Math.abs(growthTokens))} ${isZh ? "上下文" : "ctx"}` : `0 ${isZh ? "上下文" : "ctx"}`);
 
   const collapsedTools = toolEval.collapsedLabel;
-  const collapsedCtx = `${contextEval.pct}% ctx${contextEval.hasWarning ? " ⚠️" : ""}`;
+  const collapsedCtx = `${contextEval.pct}% ${isZh ? "上下文" : "ctx"}${contextEval.hasWarning ? " ⚠️" : ""}`;
 
-  const title = data.title || "Run";
+  const defaultTitle = isZh ? "运行统计" : "Run";
+  const title = data.title || defaultTitle;
   const headerLine = `⚡ ${title}: ${growthLabel} · ${collapsedTools} · ${durationSec} · ${collapsedCtx}`;
 
   // Section 1: This turn
-  const growthDetail = growthTokens >= 0
-    ? `+${growthTokens.toLocaleString("en-US")} tokens (feeds active context)`
-    : `${growthTokens.toLocaleString("en-US")} tokens (pruned / compacted)`;
+  const growthDetail = isZh
+    ? (growthTokens >= 0
+        ? `+${growthTokens.toLocaleString("en-US")} Token（计入活跃上下文）`
+        : `${growthTokens.toLocaleString("en-US")} Token（已压缩/剪枝）`)
+    : (growthTokens >= 0
+        ? `+${growthTokens.toLocaleString("en-US")} tokens (feeds active context)`
+        : `${growthTokens.toLocaleString("en-US")} tokens (pruned / compacted)`);
 
-  const thisTurnLines = [
-    `⏱️ **This turn**`,
-    `• **Context growth:** ${growthDetail}`,
-    `• **Thinking tokens:** ${thinkingEval.formatted} — ${thinkingEval.comment}`,
-    `• **Tool calls:** ${toolEval.formatted} — ${toolEval.comment}`,
-    `• **Model & duration:** ${modelLabel(data.model)} · ${durationSec}`,
-  ];
+  const thisTurnLines = isZh
+    ? [
+        `⏱️ **本轮统计**`,
+        `• **上下文增长：** ${growthDetail}`,
+        `• **思考 Token：** ${thinkingEval.formatted} — ${thinkingEval.comment}`,
+        `• **工具调用：** ${toolEval.formatted} — ${toolEval.comment}`,
+        `• **模型与耗时：** ${modelLabel(data.model)} · ${durationSec}`,
+      ]
+    : [
+        `⏱️ **This turn**`,
+        `• **Context growth:** ${growthDetail}`,
+        `• **Thinking tokens:** ${thinkingEval.formatted} — ${thinkingEval.comment}`,
+        `• **Tool calls:** ${toolEval.formatted} — ${toolEval.comment}`,
+        `• **Model & duration:** ${modelLabel(data.model)} · ${durationSec}`,
+      ];
 
   // Section 2: Session totals
-  const sessionLines = [
-    `📊 **Session totals**`,
-    `• **Active context:** ${contextEval.formatted} — ${contextEval.comment}`,
-  ];
+  const sessionLines = isZh
+    ? [
+        `📊 **会话累计**`,
+        `• **活跃上下文：** ${contextEval.formatted} — ${contextEval.comment}`,
+      ]
+    : [
+        `📊 **Session totals**`,
+        `• **Active context:** ${contextEval.formatted} — ${contextEval.comment}`,
+      ];
 
   if (data.sessionUsageTotals?.total_tokens || data.sessionTurns || data.sessionDurationMs) {
     const parts: string[] = [];
     if (data.sessionUsageTotals?.total_tokens) {
-      parts.push(`${formatTokenCount(data.sessionUsageTotals.total_tokens)} tokens consumed`);
+      parts.push(isZh ? `已消耗 ${formatTokenCount(data.sessionUsageTotals.total_tokens)} Token` : `${formatTokenCount(data.sessionUsageTotals.total_tokens)} tokens consumed`);
     }
     if (data.sessionTurns) {
-      parts.push(`${data.sessionTurns} ${data.sessionTurns === 1 ? "turn" : "turns"}`);
+      parts.push(isZh ? `${data.sessionTurns} 轮交互` : `${data.sessionTurns} ${data.sessionTurns === 1 ? "turn" : "turns"}`);
     }
     if (data.sessionDurationMs != null && data.sessionDurationMs > 0) {
-      parts.push(formatSessionDuration(data.sessionDurationMs));
+      parts.push(formatSessionDuration(data.sessionDurationMs, isZh));
     }
-    sessionLines.push(`• **Cumulative usage:** ${parts.join(" · ")}`);
+    sessionLines.push(isZh ? `• **全局累计用量：** ${parts.join(" · ")}` : `• **Cumulative usage:** ${parts.join(" · ")}`);
   }
 
-  sessionLines.push(`• **Prompt cache:** ${cacheEval.formatted} — ${cacheEval.comment}`);
+  sessionLines.push(isZh ? `• **提示词缓存：** ${cacheEval.formatted} — ${cacheEval.comment}` : `• **Prompt cache:** ${cacheEval.formatted} — ${cacheEval.comment}`);
 
   return [
     `**> ${headerLine}`,

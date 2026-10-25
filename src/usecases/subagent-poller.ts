@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AppContext } from "../context.js";
 import { controllerKey } from "../context.js";
 import { isWaitingResponseText, runAgy } from "../agy-runner.js";
-import { settingsFor } from "../domain/settings.js";
+import { isZh, settingsFor } from "../domain/settings.js";
 import { addUsage, formatTokenCount } from "../domain/usage-math.js";
 import { buildTelemetryQuoteBlock } from "../domain/telemetry.js";
 import { createMainKeyboard } from "../keyboards.js";
@@ -456,6 +456,7 @@ export class SubagentPoller {
         durationMs: result.durationMs || 0,
         sessionDurationMs: result.sessionDurationMs,
         model: result.model || params.settings.model || "",
+        isZh: isZh(settingsFor(context, params.chatId), context, params.chatId),
       });
       await replyWithFormattedResponse(
         context,
@@ -482,6 +483,7 @@ export class SubagentPoller {
         durationMs: result.durationMs || 0,
         sessionDurationMs: result.sessionDurationMs,
         model: result.model || params.settings.model || "",
+        isZh: isZh(settingsFor(context, params.chatId), context, params.chatId),
       });
       const quoteHtml = formatTelegramHtml(telemetryBlock);
       const updatedText = lastMsg.parseMode === "HTML"

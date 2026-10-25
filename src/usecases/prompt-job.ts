@@ -151,11 +151,12 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
     }, 4000);
     const session = context.state.session(job.chatId);
     const settings = settingsFor(context, job.chatId);
+    const zh = isZh(settings, context, job.chatId);
     const isCustomWorkspace = Boolean(settings.workspace);
     wsNotice = isCustomWorkspace ? `📁 <b>Workspace:</b> <code>${escapeHtml(settings.workspace!)}</code>\n` : "";
     progressMessage = await context.telegram.sendMessage(
       job.chatId,
-      `${wsNotice}⏳ AGY is starting... (${modelLabel(settings.model)})`,
+      zh ? `${wsNotice}⏳ AGY 正在启动... (${modelLabel(settings.model)})` : `${wsNotice}⏳ AGY is starting... (${modelLabel(settings.model)})`,
       undefined,
       "HTML"
     );
@@ -456,6 +457,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           durationMs: result.durationMs || (Date.now() - startedAt),
           sessionDurationMs: result.sessionDurationMs,
           model: result.model || settings.model || "",
+          isZh: zh,
         });
         const quoteHtml = formatTelegramHtml(telemetryBlock);
         await context.telegram.editMessageText(
@@ -566,6 +568,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           durationMs: result.durationMs || (Date.now() - startedAt),
           sessionDurationMs: result.sessionDurationMs,
           model: result.model || settings.model || "",
+          isZh: zh,
         });
         await replyWithFormattedResponse(
           context,
@@ -592,6 +595,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           durationMs: result.durationMs || (Date.now() - startedAt),
           sessionDurationMs: result.sessionDurationMs,
           model: result.model || settings.model || "",
+          isZh: zh,
         });
         const quoteHtml = formatTelegramHtml(telemetryBlock);
         const updatedText = lastMsg.parseMode === "HTML"

@@ -296,3 +296,35 @@ test("TC-TEL-12: replyWithFormattedResponse returns SentMessage metadata for in-
   assert.equal(sent[0].parseMode, "HTML");
 });
 
+test("TC-TEL-13: Chinese telemetry localization renders localized headers and comments", () => {
+  const data: TelemetryData = {
+    activeTokens: 45_000,
+    contextGrowthTokens: 1_280,
+    maxTokens: 1_000_000,
+    inputTokens: 1_000,
+    cacheReadTokens: 9_000,
+    thinkingTokens: 1_240,
+    outputTokens: 280,
+    toolCalls: 2,
+    durationMs: 1_200,
+    sessionUsageTotals: { total_tokens: 171_000 },
+    sessionTurns: 3,
+    sessionDurationMs: 120_000,
+    model: "gemini-3.8-flash-high",
+    isZh: true,
+  };
+
+  const block = buildTelemetryQuoteBlock(data);
+  assert.match(block, /\*\*>\s*⚡ 运行统计: \+1\.3k 上下文 · 2 个工具 · 1\.2s · 5% 上下文/);
+  assert.match(block, /⏱️ \*\*本轮统计\*\*/);
+  assert.match(block, /• \*\*上下文增长：\*\* \+1,280 Token（计入活跃上下文）/);
+  assert.match(block, /• \*\*思考 Token：\*\* 1,240 Token — 均衡思考/);
+  assert.match(block, /• \*\*工具调用：\*\* 2 次执行 — 正常（已在服务器执行验证）/);
+  assert.match(block, /• \*\*模型与耗时：\*\* Gemini 3\.8 Flash \(High\) · 1\.2s/);
+  assert.match(block, /📊 \*\*会话累计\*\*/);
+  assert.match(block, /• \*\*活跃上下文：\*\* 45,000 \/ 1,000,000 Token \(5%\) — 正常良好/);
+  assert.match(block, /• \*\*全局累计用量：\*\* 已消耗 171k Token · 3 轮交互 · 2分 0秒 总计/);
+  assert.match(block, /• \*\*提示词缓存：\*\* 90% 命中率 — 热缓存（最优命中）/);
+});
+
+
