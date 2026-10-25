@@ -88,6 +88,7 @@ export async function handleBackupCommand(context: AppContext, chatId: ChatId): 
         "antigravity-cli/conversation_summaries.db-wal",
         "antigravity-cli/conversation_summaries.db-shm",
         "antigravity-cli/settings.json",
+        "antigravity-cli/history.jsonl",
         "config/mcp_config.json",
         "config/AGENTS.md",
         "config/GEMINI.md",
@@ -106,6 +107,7 @@ export async function handleBackupCommand(context: AppContext, chatId: ChatId): 
         "conversation_summaries.db-wal",
         "conversation_summaries.db-shm",
         "settings.json",
+        "history.jsonl",
       ];
 
   for (const item of candidateItems) {
@@ -151,6 +153,7 @@ export async function handleBackupCommand(context: AppContext, chatId: ChatId): 
     if (itemsToInclude.some((i) => i.includes("skills"))) summaryList.push(zh ? "自定义技能" : "Skills");
     if (itemsToInclude.some((i) => i.includes("plugins"))) summaryList.push(zh ? "插件" : "Plugins");
     if (itemsToInclude.some((i) => i.includes("settings.json"))) summaryList.push(zh ? "CLI设置" : "CLI Settings");
+    if (itemsToInclude.some((i) => i.includes("history.jsonl"))) summaryList.push(zh ? "历史指令" : "Command History");
 
     const includedSummary = summaryList.length > 0 ? summaryList.join("、") : itemsToInclude.join(", ");
 

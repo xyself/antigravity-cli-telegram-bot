@@ -41,6 +41,7 @@ test("handleBackupCommand packages agy data and sends document file", async () =
     assert.equal(docPayload.chat_id, chatId);
     assert.ok(String(docPayload.caption).includes("AGY"));
     assert.ok(String(docPayload.caption).includes("MCP"));
+    assert.ok(String(docPayload.caption).includes("Command History") || String(docPayload.caption).includes("历史指令"));
 
     // Verify temp archive was cleaned up
     const filePath = String(docPayload.file_path);
