@@ -16,7 +16,7 @@ import { runCustomAgy } from "../usecases/custom-agy.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
 import { defaultSubagentPoller } from "../usecases/subagent-poller.js";
 import { authorizedMessage } from "./auth.js";
-import { BOT_COMMANDS_ZH } from "../bot.js";
+import { BOT_COMMANDS, BOT_COMMANDS_ZH } from "../bot.js";
 import { handleCallback } from "./callbacks.js";
 import { handleCommand } from "./commands.js";
 import { createSttService, isWhisperInstalled } from "../stt/stt-service.js";
@@ -367,7 +367,12 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
         if (!isNaN(idNum)) {
           await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
         }
-        await replyWithHtml(context, sessionKey, "🌐 界面语言已切换为：<b>简体中文</b>", createMainKeyboard(current));
+        await replyWithHtml(
+          context,
+          sessionKey,
+          "🌐 界面语言已切换为：<b>简体中文</b>\n\n💡 <i>提示：若输入框的 / 命令列表未立即更新，请退出当前聊天重进或重启 Telegram。</i>",
+          createMainKeyboard(current)
+        );
         return;
       }
       if (target === "en" || target === "english") {
@@ -375,9 +380,14 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
         await saveSettings(context, sessionKey, current);
         const idNum = Number(String(sessionKey).split(":")[0]);
         if (!isNaN(idNum)) {
-          await context.telegram.deleteMyCommands({ scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
+          await context.telegram.setMyCommands(BOT_COMMANDS, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
         }
-        await replyWithHtml(context, sessionKey, "🌐 Interface language switched to: <b>English</b>", createMainKeyboard(current));
+        await replyWithHtml(
+          context,
+          sessionKey,
+          "🌐 Interface language switched to: <b>English</b>\n\n💡 <i>Tip: If the / command popup has not updated, reopen this chat or restart Telegram to refresh.</i>",
+          createMainKeyboard(current)
+        );
         return;
       }
       const zh = isZh(current, context, sessionKey);

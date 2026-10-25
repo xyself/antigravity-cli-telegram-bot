@@ -32,6 +32,7 @@ import { handleDiffCommand } from "../usecases/diff-command.js";
 import { handleTitleCommand } from "../usecases/title-command.js";
 import { handleSkillsCommand } from "../usecases/skills-command.js";
 import { handleMcpCommand } from "../usecases/mcp-command.js";
+import { handleBackupCommand } from "../usecases/backup-command.js";
 import { escapeHtml } from "../telegram.js";
 import type { ChatId, TelegramMessage } from "../types.js";
 
@@ -584,6 +585,10 @@ command("/compact")(async ({ context, chatId, args }) => {
 
 command("/diff")(async ({ context, chatId }) => {
   await handleDiffCommand(context, chatId);
+});
+
+command("/backup", "/backup_chats", "/export_conversations")(async ({ context, chatId }) => {
+  await handleBackupCommand(context, chatId);
 });
 
 command("/title", "/rename")(async ({ context, chatId, args }) => {

@@ -34,7 +34,7 @@ export function createAppServices(base: BaseServices): AppContext {
   return services;
 }
 
-const BOT_COMMANDS: Array<{ command: string; description: string }> = [
+export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "menu", description: "Show the bottom control keyboard" },
   { command: "new", description: "Start a new AGY conversation" },
   { command: "lang", description: "Switch language / 语言切换" },
@@ -72,6 +72,7 @@ const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "plugins", description: "List imported AGY plugins" },
   { command: "skills", description: "List available AGY skills (workspace, global, built-in)" },
   { command: "mcp", description: "List configured MCP servers" },
+  { command: "backup", description: "Export & download conversation archive (.tar.gz)" },
   { command: "cli_help", description: "Show AGY CLI help" },
   { command: "version", description: "Show AGY CLI version" },
   { command: "update", description: "Update Telegram bot from GitHub & restart" },
@@ -118,6 +119,7 @@ export const BOT_COMMANDS_ZH: Array<{ command: string; description: string }> = 
   { command: "plugins", description: "查看已安装的 AGY 插件列表" },
   { command: "skills", description: "查看可用技能 (工作区、全局、内置)" },
   { command: "mcp", description: "查看已配置的 MCP 服务器列表" },
+  { command: "backup", description: "打包并下载历史会话备份 (.tar.gz)" },
   { command: "cli_help", description: "查看 AGY 原生 CLI 帮助信息" },
   { command: "version", description: "查看 AGY CLI 版本号" },
   { command: "update", description: "从 GitHub 更新 Bot 源码并重启" },

@@ -25,7 +25,7 @@ import { selectModel } from "../usecases/model-selection.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
 import type { TelegramCallbackQuery } from "../types.js";
 import { isWhisperInstalled, warmupWhisperLocal } from "../stt/stt-service.js";
-import { BOT_COMMANDS_ZH } from "../bot.js";
+import { BOT_COMMANDS, BOT_COMMANDS_ZH } from "../bot.js";
 import { authorizedCallback } from "./auth.js";
 import { parseCallbackAction } from "./callback-parser.js";
 
@@ -168,16 +168,16 @@ async function applySettingChange(context: AppContext, chatId: import("../types.
       const zh = value === "zh";
       const idNum = Number(String(chatId).split(":")[0]);
       if (!isNaN(idNum)) {
-        if (zh) {
-          await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
-        } else {
-          await context.telegram.deleteMyCommands({ scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
-        }
+        const commandSet = zh ? BOT_COMMANDS_ZH : BOT_COMMANDS;
+        await context.telegram.setMyCommands(commandSet, { scope: { type: "chat", chat_id: idNum } }).catch(() => undefined);
       }
+      const refreshNotice = zh
+        ? "\n\n💡 <i>提示：若输入框的 / 命令列表未立即更新，请退出当前聊天重进或重启 Telegram。</i>"
+        : "\n\n💡 <i>Tip: If the / command popup has not updated, reopen this chat or restart Telegram to refresh.</i>";
       await context.telegram.editMessageText(
         chatId,
         messageId,
-        zh ? "🌐 界面语言已切换为：<b>简体中文</b>" : "🌐 Interface language switched to: <b>English</b>",
+        (zh ? "🌐 界面语言已切换为：<b>简体中文</b>" : "🌐 Interface language switched to: <b>English</b>") + refreshNotice,
         backKeyboard(zh),
         "HTML"
       );
