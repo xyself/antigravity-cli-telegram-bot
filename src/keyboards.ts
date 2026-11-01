@@ -7,11 +7,11 @@ export function createMainKeyboard(settings?: SessionSettings): ReplyKeyboardMar
   return {
     keyboard: [
       zh
-        ? ["✨ 新对话", "🛑 停止", "📊 额度", "📋 菜单"]
-        : ["✨ New", "🛑 Stop", "📊 Quota", "📋 Menu"],
+        ? ["✨ 新对话", "🛑 停止", "🤖 模型", "💬 临时对话", "📋 菜单"]
+        : ["✨ New", "🛑 Stop", "🤖 Model", "💬 Btw", "📋 Menu"],
       zh
-        ? ["🤖 模型", "💬 临时对话", "⏪ 回退", "🗜️ 压缩"]
-        : ["🤖 Model", "💬 Btw", "⏪ Rewind", "🗜️ Compact"],
+        ? ["📁 Diff", "⏪ 回退", "🗜️ 压缩", "📊 额度", "🌿 分支"]
+        : ["📁 Diff", "⏪ Rewind", "🗜️ Compact", "📊 Quota", "🌿 Fork"],
     ],
     resize_keyboard: true,
     is_persistent: true,

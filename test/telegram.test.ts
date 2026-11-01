@@ -32,8 +32,8 @@ test("splits Telegram messages near line boundaries", () => { const chunks = spl
 test("builds a persistent 2-row reply keyboard with core shortcuts", () => {
   const keyboard = createMainKeyboard({ model: "gemini-3.6-flash-high", effort: "high", mode: "plan", sandbox: true, verbose: "detailed" });
   assert.deepEqual(keyboard.keyboard, [
-    ["✨ New", "🛑 Stop", "📊 Quota", "📋 Menu"],
-    ["🤖 Model", "💬 Btw", "⏪ Rewind", "🗜️ Compact"],
+    ["✨ New", "🛑 Stop", "🤖 Model", "💬 Btw", "📋 Menu"],
+    ["📁 Diff", "⏪ Rewind", "🗜️ Compact", "📊 Quota", "🌿 Fork"],
   ]);
   assert.equal(keyboard.resize_keyboard, true);
   assert.equal(keyboard.is_persistent, true);
@@ -41,8 +41,8 @@ test("builds a persistent 2-row reply keyboard with core shortcuts", () => {
 
   const zhKeyboard = createMainKeyboard({ language: "zh" });
   assert.deepEqual(zhKeyboard.keyboard, [
-    ["✨ 新对话", "🛑 停止", "📊 额度", "📋 菜单"],
-    ["🤖 模型", "💬 临时对话", "⏪ 回退", "🗜️ 压缩"],
+    ["✨ 新对话", "🛑 停止", "🤖 模型", "💬 临时对话", "📋 菜单"],
+    ["📁 Diff", "⏪ 回退", "🗜️ 压缩", "📊 额度", "🌿 分支"],
   ]);
 });
 

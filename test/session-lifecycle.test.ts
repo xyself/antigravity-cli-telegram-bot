@@ -397,3 +397,19 @@ test("session lifecycle: keyboard buttons '⏪ 回退' and '🗜️ 压缩' trig
     harness.cleanup();
   }
 });
+
+test("session lifecycle: keyboard buttons '📁 Diff' and '🌿 分支' trigger diff and fork handlers", async () => {
+  const harness = createHarness();
+  const ctx = asAppContext(harness);
+  try {
+    await handleUpdate(ctx, textUpdate(12345, "📁 Diff"));
+    const sentDiff = harness.telegram.sentTexts();
+    assert.ok(sentDiff.some((t) => t.toLowerCase().includes("diff") || t.toLowerCase().includes("git repository") || t.toLowerCase().includes("directory not found")));
+
+    await handleUpdate(ctx, textUpdate(12345, "🌿 分支"));
+    const sentFork = harness.telegram.sentTexts();
+    assert.ok(sentFork.some((t) => t.includes("fork") || t.includes("分支") || t.includes("No active conversation")));
+  } finally {
+    harness.cleanup();
+  }
+});

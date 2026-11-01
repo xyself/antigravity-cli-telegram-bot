@@ -14,6 +14,8 @@ import { enqueueJob } from "../usecases/enqueue.js";
 import { refreshModels } from "../usecases/model-selection.js";
 import { runCustomAgy } from "../usecases/custom-agy.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
+import { handleDiffCommand } from "../usecases/diff-command.js";
+import { handleForkCommand } from "../usecases/fork-command.js";
 import { handleRewindCommand } from "../usecases/rewind-command.js";
 import { defaultSubagentPoller } from "../usecases/subagent-poller.js";
 import { resetForumTopicNameIfAutoRenamed } from "../usecases/topic-reset.js";
@@ -468,6 +470,14 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
     }
     if (buttonText === "📊 Quota" || buttonText === "📊 Usage / Quota" || buttonText === "📊 Usage" || buttonText === "📊 额度" || buttonText === "额度" || buttonText === "用量") {
       enqueueJob(context, sessionKey, { kind: "usage" });
+      return;
+    }
+    if (buttonText === "📁 Diff" || buttonText === "📁 变更" || buttonText === "Diff") {
+      await handleDiffCommand(context, sessionKey);
+      return;
+    }
+    if (buttonText === "🌿 分支" || buttonText === "🌿 Fork" || buttonText === "分支" || buttonText === "Fork") {
+      await handleForkCommand(context, sessionKey, "");
       return;
     }
 
