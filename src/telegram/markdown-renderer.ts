@@ -84,6 +84,16 @@ export function formatTelegramHtmlChunks(text: string, maxChars: number): string
   return chunks;
 }
 
+const SHELL_LANGUAGES = new Set(["bash", "sh", "shell", "zsh", "console"]);
+
+function formatCodeBlock(lines: string[], codeLanguage: string): string {
+  const cleanLang = (codeLanguage || "").trim().toLowerCase();
+  const language = cleanLang && !SHELL_LANGUAGES.has(cleanLang)
+    ? ` class="language-${escapeHtml(codeLanguage)}"`
+    : "";
+  return `<pre><code${language}>${escapeHtml(lines.join("\n"))}</code></pre>`;
+}
+
 function renderTelegramBlocks(text: string): string[] {
   const normalized = text.replace(/\r\n?/g, "\n").trim();
   if (!normalized) return [];
@@ -121,8 +131,7 @@ function renderTelegramBlocks(text: string): string[] {
             continue;
           }
 
-          const language = codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : "";
-          output.push(`<pre><code${language}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+          output.push(formatCodeBlock(codeLines, codeLanguage));
           codeLines = null;
           codeLanguage = "";
           codeFenceLength = 0;
@@ -306,7 +315,7 @@ function renderTelegramBlocks(text: string): string[] {
     }
     output.push(formatInlineHtml(line));
   }
-  if (codeLines) output.push(`<pre><code${codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  if (codeLines) output.push(formatCodeBlock(codeLines, codeLanguage));
   return output;
 }
 

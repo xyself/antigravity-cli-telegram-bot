@@ -381,9 +381,35 @@ test("formatTelegramHtml handles multiple sequential code blocks properly", () =
   const html = formatTelegramHtml(input);
   assert.ok(html.includes('<pre><code class="language-typescript">const a = 1;</code></pre>'));
   assert.ok(html.includes("Normal text in between."));
-  assert.ok(html.includes('<pre><code class="language-bash">npm test</code></pre>'));
+  assert.ok(html.includes('<pre><code>npm test</code></pre>'));
   const preCount = (html.match(/<pre>/g) || []).length;
   assert.equal(preCount, 2);
+});
+
+test("formatTelegramHtml strips shell language tags (bash, sh, zsh, shell) for mobile tap-to-copy", () => {
+  const input = [
+    "```bash",
+    "git status",
+    "```",
+    "",
+    "```sh",
+    "ls -la",
+    "```",
+    "",
+    "```zsh",
+    "echo hello",
+    "```",
+    "",
+    "```python",
+    "print('keep')",
+    "```",
+  ].join("\n");
+
+  const html = formatTelegramHtml(input);
+  assert.ok(html.includes("<pre><code>git status</code></pre>"));
+  assert.ok(html.includes("<pre><code>ls -la</code></pre>"));
+  assert.ok(html.includes("<pre><code>echo hello</code></pre>"));
+  assert.ok(html.includes('<pre><code class="language-python">print(\'keep\')</code></pre>'));
 });
 
 test("formatTelegramHtml preserves object and type curly braces in regular text", () => {
