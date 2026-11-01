@@ -118,6 +118,7 @@ export interface SessionState {
   updatedAt?: string;
   pendingSubagentPoll?: PendingSubagentPoll | null;
   hasAutoRenamedTopic?: boolean;
+  pendingBtw?: boolean;
 }
 
 export interface PendingSubagentPoll {

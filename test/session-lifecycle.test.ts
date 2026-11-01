@@ -360,3 +360,40 @@ test("session lifecycle: deleteConversation and forkConversation handle SQLite W
     harness.cleanup();
   }
 });
+
+test("session lifecycle: keyboard button '💬 临时对话' arms pendingBtw and sends next message as btw job", async () => {
+  const harness = createHarness();
+  const ctx = asAppContext(harness);
+  try {
+    await handleUpdate(ctx, textUpdate(12345, "💬 临时对话"));
+    const session = ctx.state.session(12345);
+    assert.equal(session?.pendingBtw, true);
+    const sent = harness.telegram.sentTexts();
+    assert.ok(sent[sent.length - 1].includes("临时会话模式已就绪") || sent[sent.length - 1].includes("Side question"));
+
+    await handleUpdate(ctx, textUpdate(12345, "How to check free disk space?"));
+    assert.equal(harness.capturedJobs.length, 1);
+    assert.equal(harness.capturedJobs[0].kind, "btw");
+    assert.equal(harness.capturedJobs[0].prompt, "How to check free disk space?");
+    const sessionAfter = ctx.state.session(12345);
+    assert.equal(sessionAfter?.pendingBtw, false);
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test("session lifecycle: keyboard buttons '⏪ 回退' and '🗜️ 压缩' trigger rewind and compact directly", async () => {
+  const harness = createHarness();
+  const ctx = asAppContext(harness);
+  try {
+    await handleUpdate(ctx, textUpdate(12345, "🗜️ 压缩"));
+    assert.equal(harness.capturedJobs.length, 1);
+    assert.equal(harness.capturedJobs[0].kind, "compact");
+
+    await handleUpdate(ctx, textUpdate(12345, "⏪ 回退"));
+    const sent = harness.telegram.sentTexts();
+    assert.ok(sent.some((t) => t.includes("rewind") || t.includes("回退") || t.includes("No active conversation")));
+  } finally {
+    harness.cleanup();
+  }
+});

@@ -14,6 +14,7 @@ import { enqueueJob } from "../usecases/enqueue.js";
 import { refreshModels } from "../usecases/model-selection.js";
 import { runCustomAgy } from "../usecases/custom-agy.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
+import { handleRewindCommand } from "../usecases/rewind-command.js";
 import { defaultSubagentPoller } from "../usecases/subagent-poller.js";
 import { resetForumTopicNameIfAutoRenamed } from "../usecases/topic-reset.js";
 import { authorizedMessage } from "./auth.js";
@@ -423,6 +424,10 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
       return;
     }
     if (buttonText === "🛑 Stop" || buttonText === "🛑 Cancel" || buttonText === "Stop" || buttonText === "Cancel" || buttonText === "🛑 停止" || buttonText === "停止" || buttonText === "取消") {
+      const existingSession = context.state.session(sessionKey);
+      if (existingSession?.pendingBtw) {
+        await context.state.setSession(sessionKey, { ...existingSession, pendingBtw: false });
+      }
       context.pendingDangerousCommands?.delete(String(sessionKey));
       context.controllers?.get(controllerKey("prompt", sessionKey))?.abort();
       context.controllers?.get(controllerKey("custom", sessionKey))?.abort();
@@ -438,6 +443,23 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
     if (buttonText === "🤖 Model" || buttonText === "🤖 模型" || buttonText === "模型") {
       await refreshModels(context);
       await reply(context, sessionKey, zh ? "请选择模型：" : "Select a model:", modelKeyboard(context, sessionKey));
+      return;
+    }
+    if (buttonText === "💬 临时对话" || buttonText === "💬 Btw" || buttonText === "临时对话" || buttonText === "💬 临时提问") {
+      const currentSession = context.state.session(sessionKey) || {};
+      await context.state.setSession(sessionKey, { ...currentSession, pendingBtw: true });
+      const promptMsg = zh
+        ? "💬 <b>临时会话模式已就绪</b>\n\n请直接发送您想临时咨询的问题（例如：<code>1+1等于几</code>）：\n\n<i>（临时提问将在独立沙箱中执行并自动清理，完全不污染当前主会话上下文与历史记录）</i>"
+        : "💬 <b>Side question (/btw) mode ready</b>\n\nSend your question directly in the next message to run in an isolated session without polluting conversation history.";
+      await replyWithHtml(context, sessionKey, promptMsg, createMainKeyboard(settingsFor(context, sessionKey)));
+      return;
+    }
+    if (buttonText === "⏪ 回退" || buttonText === "⏪ Rewind" || buttonText === "回退" || buttonText === "⏪ 回退1轮") {
+      await handleRewindCommand(context, sessionKey, "1");
+      return;
+    }
+    if (buttonText === "🗜️ 压缩" || buttonText === "🗜️ Compact" || buttonText === "压缩") {
+      enqueueJob(context, sessionKey, { kind: "compact" });
       return;
     }
     if (buttonText === "📋 Menu" || buttonText === "Menu" || buttonText === "📋 菜单" || buttonText === "菜单") {
@@ -491,6 +513,17 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
       }
     } else if (promptPrefix) {
       text = rawText ? `${promptPrefix}\n\n${rawText}` : promptPrefix;
+    }
+
+    const activeSession = context.state.session(sessionKey);
+    if (activeSession?.pendingBtw) {
+      await context.state.setSession(sessionKey, { ...activeSession, pendingBtw: false });
+      void context.telegram.sendChatAction(sessionKey, "typing").catch(() => undefined);
+      enqueueJob(context, sessionKey, {
+        prompt: text,
+        kind: "btw",
+      });
+      return;
     }
 
     void context.telegram.sendChatAction(sessionKey, "typing").catch(() => undefined);

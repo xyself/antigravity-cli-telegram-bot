@@ -9,6 +9,9 @@ export function createMainKeyboard(settings?: SessionSettings): ReplyKeyboardMar
       zh
         ? ["✨ 新对话", "🛑 停止", "📊 额度", "📋 菜单"]
         : ["✨ New", "🛑 Stop", "📊 Quota", "📋 Menu"],
+      zh
+        ? ["🤖 模型", "💬 临时对话", "⏪ 回退", "🗜️ 压缩"]
+        : ["🤖 Model", "💬 Btw", "⏪ Rewind", "🗜️ Compact"],
     ],
     resize_keyboard: true,
     is_persistent: true,

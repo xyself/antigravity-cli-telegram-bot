@@ -29,12 +29,21 @@ test("splitPreformattedHtml preserves HTML tags without double escaping", () => 
 
 test("splits Telegram messages near line boundaries", () => { const chunks = splitMessage("one\ntwo\nthree\nfour", 8); assert.deepEqual(chunks, ["one\ntwo", "three", "four"]); assert.ok(chunks.every((chunk) => chunk.length <= 8)); });
 
-test("builds a persistent new session, stop, quota, and menu reply keyboard beside the input", () => {
+test("builds a persistent 2-row reply keyboard with core shortcuts", () => {
   const keyboard = createMainKeyboard({ model: "gemini-3.6-flash-high", effort: "high", mode: "plan", sandbox: true, verbose: "detailed" });
-  assert.deepEqual(keyboard.keyboard, [["✨ New", "🛑 Stop", "📊 Quota", "📋 Menu"]]);
+  assert.deepEqual(keyboard.keyboard, [
+    ["✨ New", "🛑 Stop", "📊 Quota", "📋 Menu"],
+    ["🤖 Model", "💬 Btw", "⏪ Rewind", "🗜️ Compact"],
+  ]);
   assert.equal(keyboard.resize_keyboard, true);
   assert.equal(keyboard.is_persistent, true);
   assert.equal("inline_keyboard" in keyboard, false);
+
+  const zhKeyboard = createMainKeyboard({ language: "zh" });
+  assert.deepEqual(zhKeyboard.keyboard, [
+    ["✨ 新对话", "🛑 停止", "📊 额度", "📋 菜单"],
+    ["🤖 模型", "💬 临时对话", "⏪ 回退", "🗜️ 压缩"],
+  ]);
 });
 
 test("formats AGY Markdown-like responses as safe Telegram HTML", () => {
