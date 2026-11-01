@@ -17,11 +17,15 @@ import { usageText } from "../ui/messages.js";
 import { contextActionsKeyboard } from "../ui/inline-keyboards.js";
 import { refreshActiveMenu } from "../ui/screens.js";
 import { runCompactionJob } from "./compaction.js";
+import { runBtwJob } from "./btw-command.js";
 import { clearSentImagePaths, detectAndSendGeneratedImages } from "./image-detection.js";
 import { parseChatTarget } from "../telegram/client.js";
 import { createTtsService } from "../tts/tts-service.js";
 import { defaultSubagentPoller } from "./subagent-poller.js";
+import { generateTopicShortName, resolveEffectiveForumThreadId } from "../domain/topic-namer.js";
 import type { StreamEvent } from "../types.js";
+
+const inFlightTopicRenames = new Set<string>();
 
 type PtyReportKind = "usage" | "credits" | "context";
 
@@ -125,6 +129,12 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
 
   if (job.kind === "compact") {
     await runCompactionJob(context, job, controller, isCancelled);
+    context.controllers.delete(controllerKey("prompt", job.chatId));
+    return;
+  }
+
+  if (job.kind === "btw") {
+    await runBtwJob(context, job, controller, isCancelled);
     context.controllers.delete(controllerKey("prompt", job.chatId));
     return;
   }
@@ -657,6 +667,63 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
     // Background telemetry probe: sync live active context tokens if not probed yet
     if (!probeCompleted && effectiveConvId && !isCancelled() && !controller.signal.aborted) {
       await probeContext();
+    }
+
+    // Auto-rename topic after Turn 1 if enabled
+    const autoRenameEnabled = settings.autoTopicRename ?? context.config.telegram.autoTopicRename ?? false;
+    const { chatId: targetChatId, threadId: effectiveThreadId } = resolveEffectiveForumThreadId(
+      job.chatId,
+      context.config.telegram.enableTopics
+    );
+    const sessionKeyStr = String(job.chatId);
+    if (
+      autoRenameEnabled &&
+      effectiveThreadId !== undefined &&
+      !latestSession?.hasAutoRenamedTopic &&
+      !inFlightTopicRenames.has(sessionKeyStr) &&
+      job.prompt &&
+      result.text
+    ) {
+      inFlightTopicRenames.add(sessionKeyStr);
+
+      // Run topic renaming asynchronously in background without blocking turn finish
+      void (async () => {
+        try {
+          const shortName = await generateTopicShortName(
+            context.config,
+            job.prompt || "",
+            result.text || "",
+            undefined,
+            settings.model,
+            (ephemeralConvId) => {
+              context.convDb.markConversationKilled(ephemeralConvId);
+              setTimeout(() => {
+                context.convDb.markConversationKilled(ephemeralConvId);
+              }, 5_000).unref();
+            }
+          );
+          if (!shortName) return;
+
+          // Ensure session was not reset (/new) while short name was being generated
+          const currentSession = context.state.session(job.chatId);
+          if (!currentSession?.conversationId) return;
+
+          const renamed = await context.telegram.editForumTopic(targetChatId, effectiveThreadId, shortName);
+          if (renamed) {
+            const latestAfterRename = context.state.session(job.chatId);
+            if (latestAfterRename?.conversationId) {
+              await context.state.setSession(job.chatId, {
+                ...latestAfterRename,
+                hasAutoRenamedTopic: true,
+              });
+            }
+          }
+        } catch (renameErr) {
+          console.debug(`[AutoTopicRename] Failed to rename topic: ${(renameErr as Error).message}`);
+        } finally {
+          inFlightTopicRenames.delete(sessionKeyStr);
+        }
+      })();
     }
   } catch (error) {
     if (isCancelled() || controller.signal.aborted || (error instanceof Error && error.message.includes("cancelled"))) {

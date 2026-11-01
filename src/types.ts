@@ -82,6 +82,7 @@ export interface SessionSettings {
   ttsMode?: "off" | "voice-only" | "voice-and-text" | "auto";
   ttsVoice?: string;
   language?: "en" | "zh";
+  autoTopicRename?: boolean;
 }
 
 export interface Usage {
@@ -116,6 +117,7 @@ export interface SessionState {
   activeMenuScreen?: string;
   updatedAt?: string;
   pendingSubagentPoll?: PendingSubagentPoll | null;
+  hasAutoRenamedTopic?: boolean;
 }
 
 export interface PendingSubagentPoll {
@@ -138,7 +140,7 @@ export interface ConversationSummary {
 
 export interface InFlightJob {
   prompt?: string;
-  kind?: "prompt" | "usage" | "credits" | "context" | "compact" | "subagent_poll";
+  kind?: "prompt" | "usage" | "credits" | "context" | "compact" | "btw" | "subagent_poll";
   imagePath?: string;
   imagePaths?: string[];
   documentPath?: string;
@@ -189,6 +191,10 @@ export interface AppConfig {
     allowBotUpdate: boolean;
     autoInterrupt: boolean;
     telemetryPostPrompt: TelemetryPostPromptMode;
+    autoTopicRename: boolean;
+    autoTopicModel?: string;
+    topicResetPrefix?: string;
+    enableTopics: boolean;
   };
   agy: AgyConfig;
   stt: {

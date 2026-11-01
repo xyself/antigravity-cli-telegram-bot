@@ -15,6 +15,7 @@ export function contextActionsKeyboard(zh = false): InlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [button(zh ? "🗜️ 压缩上下文" : "🗜️ Compact Context", "action:compact"), button(zh ? "🔄 刷新" : "🔄 Refresh", "action:context")],
+      [button(zh ? "🔀 分叉克隆会话" : "🔀 Fork Session", "action:fork"), button(zh ? "⏪ 回退 1 轮" : "⏪ Rewind 1 Turn", "action:rewind")],
     ],
   };
 }
@@ -222,6 +223,7 @@ export function modeSandboxKeyboard(context: AppContext, chatId: ChatId): Inline
     inline_keyboard: [
       [button(`⚙️ Mode: ${settings.mode}`, "menu:mode"), button(`🛡️ Sandbox: ${settings.sandbox ? "On" : "Off"}`, "menu:sandbox")],
       [button(`Verbose: ${settings.verbose || "detailed"}`, "menu:verbose"), button("Session Info", "menu:session")],
+      [button(`🏷️ Auto-Topic: ${settings.autoTopicRename ? "On" : "Off"}`, "toggle:autotopic")],
       [button("‹ Back", "menu:main")],
     ],
   };
@@ -229,6 +231,7 @@ export function modeSandboxKeyboard(context: AppContext, chatId: ChatId): Inline
 
 export function cliToolsKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
   const session = context.state.session(chatId);
+  const settings = settingsFor(context, chatId);
   return {
     inline_keyboard: [
       [button("⚙️ Mode & Sandbox", "menu:modesandbox"), button("🛠️ CLI Options", "menu:cli")],
@@ -238,7 +241,7 @@ export function cliToolsKeyboard(context: AppContext, chatId: ChatId): InlineKey
       [button("Changelog", "cli:changelog"), button("CLI Help", "cli:help")],
       [button("CLI Version", "cli:version"), button("Update CLI", "cli:update")],
       [button("🔄 Update Bot", "action:update_bot"), button("💾 Set as Default", "action:setdefault")],
-      [button("New session", "action:new")],
+      [button("New session", "action:new"), button(`🏷️ Auto-Topic: ${settings.autoTopicRename ? "On" : "Off"}`, "toggle:autotopic")],
       [button("‹ Back", "menu:main")],
     ],
   };

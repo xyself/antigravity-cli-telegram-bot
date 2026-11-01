@@ -3,6 +3,7 @@ import type { AppContext } from "../context.js";
 import { getModelMaxContext, modelLabel, renderContextProgressBar } from "../models.js";
 import { escapeHtml } from "../telegram.js";
 import { isZh, settingsFor } from "../domain/settings.js";
+import { resolveEffectiveForumThreadId } from "../domain/topic-namer.js";
 import type { ChatId, SessionSettings, Usage } from "../types.js";
 
 export function settingsText(settings: SessionSettings): string {
@@ -12,6 +13,7 @@ export function settingsText(settings: SessionSettings): string {
     `Sandbox: ${settings.sandbox ? "enabled" : "disabled"}`, `Output: ${settings.outputFormat}`,
     settings.workspace ? `Workspace: ${settings.workspace}` : null,
     `Add dirs: ${settings.addDirs?.length || 0}`, `Slash commands: ${settings.disableSlashCommands ? "disabled" : "enabled"}`,
+    `Auto topic rename: ${settings.autoTopicRename ? "enabled" : "disabled"}`,
   ].filter(Boolean).join("\n");
 }
 
@@ -21,6 +23,8 @@ export function sessionInfoHtml(context: AppContext, chatId: ChatId): string {
   const maxContext = getModelMaxContext(settings.model);
   const contextStr = maxContext ? `${maxContext.toLocaleString()} tokens` : (zh ? "默认" : "Default");
   const modeStr = settings.mode === "accept-edits" ? (zh ? "编辑模式 (accept-edits)" : "edit (accept-edits)") : (settings.mode || "accept-edits");
+  const { threadId } = resolveEffectiveForumThreadId(chatId, context.config.telegram?.enableTopics);
+  const showAutoTopic = threadId !== undefined || Boolean(settings.autoTopicRename);
 
   if (zh) {
     return [
@@ -31,6 +35,7 @@ export function sessionInfoHtml(context: AppContext, chatId: ChatId): string {
       `• <b>详细程度:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
       `• <b>上下文上限:</b> <code>${escapeHtml(contextStr)}</code>`,
       `• <b>沙箱保护:</b> <code>${settings.sandbox ? "已开启" : "已关闭"}</code>`,
+      showAutoTopic ? `• <b>话题短名:</b> <code>${settings.autoTopicRename ? "已开启" : "已关闭"}</code>` : null,
       settings.workspace ? `• <b>工作区:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
       context.config.agy.project ? `• <b>项目:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
     ].filter(Boolean).join("\n");
@@ -44,6 +49,7 @@ export function sessionInfoHtml(context: AppContext, chatId: ChatId): string {
     `• <b>Verbose:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
     `• <b>Context Limit:</b> <code>${escapeHtml(contextStr)}</code>`,
     `• <b>Sandbox:</b> <code>${settings.sandbox ? "Enabled" : "Disabled"}</code>`,
+    showAutoTopic ? `• <b>Auto-Topic:</b> <code>${settings.autoTopicRename ? "Enabled" : "Disabled"}</code>` : null,
     settings.workspace ? `• <b>Workspace:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
     context.config.agy.project ? `• <b>Project:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
   ].filter(Boolean).join("\n");

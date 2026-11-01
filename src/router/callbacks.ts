@@ -3,13 +3,15 @@ import { isUuid, formatRelativeTime } from "../db.js";
 import { isEffort, isMode, isVerbose, isMenuProfile } from "../config.js";
 import { createMainKeyboard } from "../keyboards.js";
 import { escapeHtml } from "../telegram.js";
-import { settingsFor, saveSettings, type SettingsOutputFormat } from "../domain/settings.js";
+import { isZh, settingsFor, saveSettings, type SettingsOutputFormat } from "../domain/settings.js";
 import { resolveWorkspacePath } from "../domain/workspace.js";
 import {
   backKeyboard,
   button,
   cliOptionsKeyboard,
+  cliToolsKeyboard,
   menuProfileKeyboard,
+  modeSandboxKeyboard,
   sttKeyboard,
   ttsKeyboard,
   verboseKeyboard,
@@ -23,6 +25,9 @@ import { persistDefaultSettings } from "../usecases/default-settings.js";
 import { updateBot } from "../usecases/self-update.js";
 import { selectModel } from "../usecases/model-selection.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
+import { resetForumTopicNameIfAutoRenamed } from "../usecases/topic-reset.js";
+import { handleForkCommand } from "../usecases/fork-command.js";
+import { handleRewindCommand } from "../usecases/rewind-command.js";
 import type { TelegramCallbackQuery } from "../types.js";
 import { isWhisperInstalled, warmupWhisperLocal } from "../stt/stt-service.js";
 import { BOT_COMMANDS, BOT_COMMANDS_ZH } from "../bot.js";
@@ -67,6 +72,12 @@ export async function handleCallback(context: AppContext, callback: TelegramCall
     case "compact":
       enqueueJob(context, chatId, { kind: "compact" });
       return;
+    case "fork":
+      await handleForkCommand(context, chatId, "");
+      return;
+    case "rewind":
+      await handleRewindCommand(context, chatId, "");
+      return;
     case "cli":
       await handleCliAction(context, chatId, messageId, action.command);
       return;
@@ -82,6 +93,7 @@ export async function handleCallback(context: AppContext, callback: TelegramCall
     case "new-session": {
       context.queue?.cancelForChat(chatId);
       await cleanupSessionTempFiles(context.config.tempDir, chatId);
+      await resetForumTopicNameIfAutoRenamed(context, chatId);
       const isTopic = Boolean(callback.message?.message_thread_id) || String(chatId).includes(":");
       await context.state.resetSession(chatId, true, isTopic);
       await context.telegram.editMessageText(chatId, messageId, sessionInfoHtml(context, chatId), { inline_keyboard: [[button("‹ Back to Menu", "menu:main")]] }, "HTML");
@@ -148,6 +160,24 @@ async function handleCliAction(context: AppContext, chatId: import("../types.js"
 
 async function toggleSetting(context: AppContext, chatId: import("../types.js").ChatId, messageId: number, option: string): Promise<void> {
   const settings = settingsFor(context, chatId);
+  if (option === "autotopic") {
+    settings.autoTopicRename = !settings.autoTopicRename;
+    await saveSettings(context, chatId, settings);
+    const activeScreen = context.state.session(chatId)?.activeMenuScreen;
+    const keyboard = activeScreen === "modesandbox"
+      ? modeSandboxKeyboard(context, chatId)
+      : cliToolsKeyboard(context, chatId);
+    const zh = isZh(settings, context, chatId);
+    await context.telegram.editMessageText(
+      chatId,
+      messageId,
+      zh
+        ? `🏷️ 话题短名自动重命名已设置为 ${settings.autoTopicRename ? "开启" : "关闭"}。`
+        : `🏷️ Auto-topic rename set to ${settings.autoTopicRename ? "On" : "Off"}.`,
+      keyboard
+    );
+    return;
+  }
   if (option === "continue") settings.continueSession = !settings.continueSession;
   if (option === "new-project") settings.newProject = !settings.newProject;
   if (option === "disable-slash") settings.disableSlashCommands = !settings.disableSlashCommands;

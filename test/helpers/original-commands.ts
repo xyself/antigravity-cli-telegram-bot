@@ -9,7 +9,10 @@ export const ORIGINAL_COMMANDS: string[] = [
   "/output-format", "/json-schema", "/log-file", "/print-timeout", "/resume", "/sessions", "/continue",
   "/new-project", "/disable-slash-commands", "/agents", "/changelog", "/plugins", "/skills", "/mcp", "/cli-help", "/version",
   "/session", "/usage", "/quota", "/credits", "/context", "/tokens", "/status", "/cancel", "/kill", "/stop",
-  "/learn", "/compact", "/agy-confirm", "/workspace", "/stt", "/tts", "/diff", "/title", "/rename", "/backup", "/backup_chats", "/export_conversations",
+  "/learn", "/compact", "/agy-confirm", "/workspace", "/stt", "/tts", "/diff", "/title", "/rename",
+  "/autotopic", "/auto_topic", "/autotopicrename",
+  "/btw", "/fork", "/branch", "/rewind", "/undo",
+  "/backup", "/backup_chats", "/export_conversations",
 ];
 
 export const EXPECTED_REGISTRY: string[] = [...new Set(ORIGINAL_COMMANDS)].sort();
