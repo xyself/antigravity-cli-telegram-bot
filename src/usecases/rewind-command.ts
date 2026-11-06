@@ -1,4 +1,4 @@
-import type { AppContext } from "../context.js";
+import { isSessionBusy, type AppContext } from "../context.js";
 import { isZh, settingsFor } from "../domain/settings.js";
 import { createMainKeyboard } from "../keyboards.js";
 import { escapeHtml } from "../telegram.js";
@@ -17,6 +17,19 @@ export async function handleRewindCommand(
 ): Promise<void> {
   const settings = settingsFor(context, chatId);
   const zh = isZh(settings, context, chatId);
+
+  if (isSessionBusy(context, chatId)) {
+    await replyWithHtml(
+      context,
+      chatId,
+      zh
+        ? "⚠️ <b>当前会话正忙。</b>\n\n请等待当前回复完成，或先发送 <code>/stop</code> 终止。"
+        : "⚠️ <b>Session is currently busy.</b>\n\nPlease wait for the current turn to finish or use <code>/stop</code> first.",
+      createMainKeyboard(settings)
+    );
+    return;
+  }
+
   const trimmed = rawArg.trim();
 
   let turns = 1;
@@ -72,6 +85,18 @@ export async function handleRewindCommand(
         zh
           ? `⚠️ <b>无法回退 ${turns} 轮对话。</b>\n\n${escapeHtml(available)} 如果想开启全新对话，请使用 <code>/new</code>。`
           : `⚠️ <b>Cannot rewind ${turns} turn${turns === 1 ? "" : "s"}.</b>\n\n${escapeHtml(available)} Use <code>/new</code> if you want to start a fresh session.`,
+        createMainKeyboard(settings)
+      );
+      return;
+    }
+
+    if (result.reason === "unrecognized_schema") {
+      await replyWithHtml(
+        context,
+        chatId,
+        zh
+          ? "⚠️ <b>无法回滚此会话。</b>\n\n会话数据库使用了无法识别或不兼容的表结构，已保持历史数据不变。"
+          : "⚠️ <b>Cannot rewind this conversation.</b>\n\nThe conversation database uses an unrecognized or incompatible schema. History was left untouched.",
         createMainKeyboard(settings)
       );
       return;

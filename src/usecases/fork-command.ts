@@ -1,4 +1,4 @@
-import type { AppContext } from "../context.js";
+import { isSessionBusy, type AppContext } from "../context.js";
 import { isZh, settingsFor } from "../domain/settings.js";
 import { createMainKeyboard } from "../keyboards.js";
 import { escapeHtml } from "../telegram.js";
@@ -17,6 +17,19 @@ export async function handleForkCommand(
 ): Promise<void> {
   const settings = settingsFor(context, chatId);
   const zh = isZh(settings, context, chatId);
+
+  if (isSessionBusy(context, chatId)) {
+    await replyWithHtml(
+      context,
+      chatId,
+      zh
+        ? "⚠️ <b>当前会话正忙。</b>\n\n请等待当前回复完成，或先发送 <code>/stop</code> 终止。"
+        : "⚠️ <b>Session is currently busy.</b>\n\nPlease wait for the current turn to finish or use <code>/stop</code> first.",
+      createMainKeyboard(settings)
+    );
+    return;
+  }
+
   const session = context.state.session(chatId);
   const sourceId = session?.conversationId;
 
