@@ -137,7 +137,25 @@ export function parseChatTarget(chatId: ChatId): { chatId: number | string; mess
 
 export class TelegramClient {
   private readonly root: string;
+  private rateLimitResetAt = 0;
+
   public constructor(private readonly token: string) { this.root = API_ROOT(token); }
+
+  public isRateLimited(): boolean {
+    return Date.now() < this.rateLimitResetAt;
+  }
+
+  public getRateLimitWaitMs(): number {
+    return Math.max(0, this.rateLimitResetAt - Date.now());
+  }
+
+  public recordRateLimit(waitSec: number): void {
+    const until = Date.now() + Math.max(1, waitSec) * 1000;
+    if (until > this.rateLimitResetAt) {
+      this.rateLimitResetAt = until;
+    }
+  }
+
   public async call<T>(method: string, payload: Record<string, unknown> = {}, signal?: AbortSignal, maxRetries = 4): Promise<T> {
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -169,6 +187,7 @@ export class TelegramClient {
 
         if (response.status === 429 || body.error_code === 429 || retryAfter !== null) {
           const waitSec = retryAfter ?? 2;
+          this.recordRateLimit(waitSec + 1);
           if (waitSec > 30 || attempt >= maxRetries) {
             throw new TelegramApiError(
               `Telegram ${method} failed: Too Many Requests: retry after ${waitSec}`,
@@ -235,7 +254,11 @@ export class TelegramClient {
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }, undefined, 0);
     } catch (error) {
-      if (error instanceof Error && (error.message.includes("message is not modified") || error.message.includes("Too Many Requests"))) return;
+      if (error instanceof Error && error.message.includes("message is not modified")) return;
+      if (parseMode === "HTML" && error instanceof Error && error.message.includes("can't parse entities")) {
+        const plainText = text.replace(/<[^>]+>/g, "");
+        return this.editMessageText(chatId, messageId, plainText, replyMarkup, undefined);
+      }
       throw error;
     }
   }

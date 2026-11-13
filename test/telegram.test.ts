@@ -437,4 +437,15 @@ test("splitMessage splits at word boundaries when newline is not available", () 
   assert.equal(chunks[0], "transcode locally requires installing");
 });
 
+test("TelegramClient rate limit tracking works correctly", () => {
+  const client = new TelegramClient("dummy_token");
+  assert.equal(client.isRateLimited(), false);
+  assert.equal(client.getRateLimitWaitMs(), 0);
+
+  client.recordRateLimit(5);
+  assert.equal(client.isRateLimited(), true);
+  assert.ok(client.getRateLimitWaitMs() > 0);
+  assert.ok(client.getRateLimitWaitMs() <= 6000);
+});
+
 

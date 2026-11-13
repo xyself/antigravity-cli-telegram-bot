@@ -18,6 +18,16 @@ export class FakeTelegramClient {
     if (found) throw new Error(`Unexpected ${method} call: ${JSON.stringify(found.payload)}`);
   }
 
+  public isRateLimited(): boolean {
+    return false;
+  }
+
+  public getRateLimitWaitMs(): number {
+    return 0;
+  }
+
+  public recordRateLimit(_waitSec: number): void {}
+
   public sentTexts(): string[] {
     return this.calls.filter((c) => c.method === "sendMessage").map((c) => String(c.payload.text));
   }

@@ -146,6 +146,9 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
   }
 
   let lastProgressAt = 0;
+  let progressCooldownUntil = 0;
+  let minProgressIntervalMs = 4500;
+  let lastEditedText = "";
   let responseDraft = "";
   let heartbeatTimer: NodeJS.Timeout | undefined;
   let typingInterval: NodeJS.Timeout | null = null;
@@ -176,9 +179,29 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
 
     const flushProgress = async (): Promise<void> => {
       if (isEditing || !progressMessage || disableProgressEdits || !pendingEditContent) return;
-      if (Date.now() - lastProgressAt < 4500) {
+      if (pendingEditContent === lastEditedText) {
+        pendingEditContent = null;
+        return;
+      }
+      const now = Date.now();
+      const clientRateLimitWait = typeof (context.telegram as unknown as { isRateLimited?: () => boolean }).isRateLimited === "function" &&
+        (context.telegram as unknown as { isRateLimited: () => boolean }).isRateLimited()
+        ? ((context.telegram as unknown as { getRateLimitWaitMs?: () => number }).getRateLimitWaitMs?.() ?? 0)
+        : 0;
+      const rateLimitWait = Math.max(clientRateLimitWait, progressCooldownUntil > now ? progressCooldownUntil - now : 0);
+      if (rateLimitWait > 0) {
         if (!progressTimeout && !disableProgressEdits) {
-          const delay = Math.max(500, 4500 - (Date.now() - lastProgressAt));
+          const delay = Math.max(500, rateLimitWait);
+          progressTimeout = setTimeout(() => {
+            progressTimeout = null;
+            void flushProgress();
+          }, delay);
+        }
+        return;
+      }
+      if (now - lastProgressAt < minProgressIntervalMs) {
+        if (!progressTimeout && !disableProgressEdits) {
+          const delay = Math.max(500, minProgressIntervalMs - (now - lastProgressAt));
           progressTimeout = setTimeout(() => {
             progressTimeout = null;
             void flushProgress();
@@ -194,17 +217,49 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
 
       try {
         await context.telegram.editMessageText(job.chatId, progressMessage.message_id, content, undefined, "HTML");
+        lastEditedText = content;
+        if (minProgressIntervalMs > 4500) {
+          minProgressIntervalMs = Math.max(4500, minProgressIntervalMs - 1000);
+        }
       } catch (err) {
-        if (err instanceof Error && (err.message.includes("429") || err.message.includes("Too Many Requests") || err.message.includes("Bad Request"))) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes("message is not modified")) {
+          lastEditedText = content;
+        } else if (errMsg.includes("429") || errMsg.includes("Too Many Requests")) {
+          let waitSec = 5;
+          const match = errMsg.match(/retry after (\d+)/i);
+          if (match) {
+            waitSec = Math.max(2, parseInt(match[1], 10));
+          }
+          minProgressIntervalMs = Math.min(15000, minProgressIntervalMs + 2000);
+          progressCooldownUntil = Date.now() + (waitSec + 1) * 1000;
+          console.warn(`[telegram] Progress edit 429 rate limited, backing off for ${waitSec + 1}s (interval=${minProgressIntervalMs}ms)`);
+        } else if (
+          errMsg.includes("message to edit not found") ||
+          errMsg.includes("message can't be edited") ||
+          errMsg.includes("chat not found") ||
+          errMsg.includes("bot was blocked") ||
+          errMsg.includes("user is deactivated")
+        ) {
           disableProgressEdits = true;
+        } else {
+          progressCooldownUntil = Date.now() + 3000;
         }
       } finally {
         isEditing = false;
         if (pendingEditContent && !disableProgressEdits && !progressTimeout) {
+          const nextNow = Date.now();
+          const nextDelay = Math.max(
+            500,
+            Math.max(
+              progressCooldownUntil - nextNow,
+              minProgressIntervalMs - (nextNow - lastProgressAt)
+            )
+          );
           progressTimeout = setTimeout(() => {
             progressTimeout = null;
             void flushProgress();
-          }, 4500);
+          }, nextDelay);
         }
       }
     };

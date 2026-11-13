@@ -15,9 +15,9 @@ Restart=always
 RestartSec=5
 TimeoutStopSec=30
 
-# Keep AGY and the bot from consuming the whole VPS.
-CPUQuota=100%
-MemoryMax=1536M
+# Resource limits
+CPUQuota=300%
+MemoryMax=12G
 TasksMax=512
 
 # Full-control mode: AGY must be able to write the workspace and use its
