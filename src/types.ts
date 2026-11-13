@@ -172,6 +172,7 @@ export interface AgyConfig {
   effort: "low" | "medium" | "high";
   allowedModels: string[];
   timeoutMs: number;
+  idleTimeoutMs?: number;
   maxOutputBytes: number;
   agent?: string;
   allowDangerouslySkipPermissions: boolean;

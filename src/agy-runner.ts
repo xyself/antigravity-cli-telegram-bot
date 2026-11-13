@@ -487,7 +487,7 @@ export function runAgy(config: AgyConfig, prompt: string, conversationId: string
     let outputLimited = false; let timedOut = false; let settled = false; let callbackError: Error | null = null;
     const startedAt = Date.now();
     const finish = (callback: (value: never) => void, value: never): void => {
-      if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener("abort", abort); callback(value);
+      if (settled) return; settled = true; signal?.removeEventListener("abort", abort); callback(value);
     };
     const emit = (line: string): void => {
       if (!line.trim()) return;
@@ -540,30 +540,43 @@ export function runAgy(config: AgyConfig, prompt: string, conversationId: string
         }, 300).unref();
       }
     };
-    const abort = (): void => { stop(true); finish(reject as (value: never) => void, new Error("AGY job cancelled") as never); };
-    const timer = setTimeout(() => { timedOut = true; stop(); }, config.timeoutMs);
+    const abort = (): void => { stop(true); settle(reject as (value: never) => void, new Error("AGY job cancelled") as never); };
+    // Wall-clock absolute timeout (AGY_TIMEOUT_MS) — hard upper bound.
+    const wallTimer = setTimeout(() => { timedOut = true; stop(); }, config.timeoutMs);
+    // Idle timeout — resets on every stdout/stderr chunk so that normal long
+    // tasks (many tool calls, subagents) are never killed while still making progress.
+    // Only fires when AGY produces zero output for a sustained window, e.g. when
+    // blocked inside a 503-retry loop.  Default: 10 min; override: AGY_IDLE_TIMEOUT_MS.
+    const idleTimeoutMs = config.idleTimeoutMs ?? Math.min(600_000, config.timeoutMs);
+    let idleTimer = setTimeout(() => { timedOut = true; stop(); }, idleTimeoutMs);
+    const resetIdle = (): void => { clearTimeout(idleTimer); idleTimer = setTimeout(() => { timedOut = true; stop(); }, idleTimeoutMs); };
+    // Unified settle helper — cancels both timers before resolving/rejecting.
+    const settle = (callback: (value: never) => void, value: never): void => {
+      clearTimeout(idleTimer); clearTimeout(wallTimer); finish(callback, value);
+    };
     signal?.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
       if (bytes > config.maxOutputBytes) { outputLimited = true; stop(); return; }
       const text = chunk.toString(); stdout += text;
+      resetIdle();
       if (outputFormat !== "stream-json") return;
       pendingLine += text; const lines = pendingLine.split(/\r?\n/); pendingLine = lines.pop() || ""; lines.forEach(emit);
     });
-    child.stderr.on("data", (chunk: Buffer) => { if (stderr.length < 4000) stderr += chunk.toString(); });
-    child.on("error", (error) => finish(reject as (value: never) => void, error as never));
+    child.stderr.on("data", (chunk: Buffer) => { if (stderr.length < 4000) { stderr += chunk.toString(); resetIdle(); } });
+    child.on("error", (error) => settle(reject as (value: never) => void, error as never));
     child.on("close", (code, signalName) => {
       if (outputFormat === "stream-json") emit(pendingLine);
-      if (timedOut) return finish(reject as (value: never) => void, new Error(`AGY timed out after ${config.timeoutMs}ms`) as never);
-      if (outputLimited) return finish(reject as (value: never) => void, new Error(`AGY output exceeded ${config.maxOutputBytes} bytes`) as never);
+      if (timedOut) return settle(reject as (value: never) => void, new Error(`AGY timed out after ${config.timeoutMs}ms`) as never);
+      if (outputLimited) return settle(reject as (value: never) => void, new Error(`AGY output exceeded ${config.maxOutputBytes} bytes`) as never);
       if (code !== 0) {
         const detail = stderr.trim().replace(/\s+/g, " ").slice(0, 1000);
-        return finish(reject as (value: never) => void, new Error(`AGY exited with ${code ?? signalName}${detail ? `: ${detail}` : ""}`) as never);
+        return settle(reject as (value: never) => void, new Error(`AGY exited with ${code ?? signalName}${detail ? `: ${detail}` : ""}`) as never);
       }
-      if (callbackError) return finish(reject as (value: never) => void, callbackError as never);
+      if (callbackError) return settle(reject as (value: never) => void, callbackError as never);
       const result = outputFormat === "stream-json" ? parseStreamOutput(stdout) : parseJsonOutput(stdout);
       const runDurationMs = Date.now() - startedAt;
-      finish(resolve as (value: never) => void, {
+      settle(resolve as (value: never) => void, {
         ...result,
         durationMs: runDurationMs,
         sessionDurationMs: result.sessionDurationMs ?? runDurationMs,
