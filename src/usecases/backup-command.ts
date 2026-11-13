@@ -45,6 +45,9 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
+// Telegram Bot API sendDocument limit is 50 MiB; stay safely below it.
+const TG_DOCUMENT_MAX_BYTES = 45 * 1024 * 1024;
+
 export async function handleBackupCommand(context: AppContext, chatId: ChatId): Promise<void> {
   const settings = settingsFor(context, chatId);
   const zh = isZh(settings, context, chatId);
@@ -124,6 +127,8 @@ export async function handleBackupCommand(context: AppContext, chatId: ChatId): 
     return;
   }
 
+  const partPaths: string[] = [];
+
   try {
     // 3. Create compressed tar archive
     try {
@@ -165,12 +170,39 @@ export async function handleBackupCommand(context: AppContext, chatId: ChatId): 
       ? `✅ <b>AGY 全量备份已完成</b>\n\n📅 时间: <code>${timeFormatted}</code>\n📦 大小: <code>${sizeStr}</code>\n📂 包含: ${includedSummary}\n\n💡 <i>${restoreHint}</i>`
       : `✅ <b>AGY Full Backup Completed</b>\n\n📅 Date: <code>${timeFormatted}</code>\n📦 Size: <code>${sizeStr}</code>\n📂 Includes: ${includedSummary}\n\n💡 <i>${restoreHint}</i>`;
 
-    await context.telegram.sendDocumentFile(
-      chatId,
-      archivePath,
-      caption,
-      createMainKeyboard(settings)
-    );
+    if (stat.size <= TG_DOCUMENT_MAX_BYTES) {
+      await context.telegram.sendDocumentFile(
+        chatId,
+        archivePath,
+        caption,
+        createMainKeyboard(settings)
+      );
+    } else {
+      // Split into 45 MiB parts: agy_backup_<ts>.tar.gz.part00, .part01, ...
+      const partPrefix = `${archivePath}.part`;
+      await execFileAsync("split", ["-b", "45M", "-d", "-a", "2", archivePath, partPrefix]);
+      const tmpEntries = await fs.promises.readdir(tmpDir);
+      for (const name of tmpEntries.sort()) {
+        if (name.startsWith(path.basename(partPrefix))) {
+          partPaths.push(path.join(tmpDir, name));
+        }
+      }
+      partPaths.sort();
+      if (partPaths.length === 0) throw new Error("split produced no parts");
+      const restoreCmd = `cat ${path.basename(archivePath)}.part* > ${path.basename(archivePath)}`;
+      for (let i = 0; i < partPaths.length; i += 1) {
+        const partStat = await fs.promises.stat(partPaths[i]);
+        const partCaption = zh
+          ? `✅ <b>AGY 全量备份已完成（分卷 ${i + 1}/${partPaths.length}）</b>\n\n📅 时间: <code>${timeFormatted}</code>\n📦 总大小: <code>${sizeStr}</code> · 本卷: <code>${formatBytes(partStat.size)}</code>\n📂 包含: ${includedSummary}\n\n💡 <i>下载全部 ${partPaths.length} 个分卷后合并：<code>${restoreCmd}</code>，再${restoreHint}</i>`
+          : `✅ <b>AGY Full Backup Completed (part ${i + 1}/${partPaths.length})</b>\n\n📅 Date: <code>${timeFormatted}</code>\n📦 Total size: <code>${sizeStr}</code> · This part: <code>${formatBytes(partStat.size)}</code>\n📂 Includes: ${includedSummary}\n\n💡 <i>Download all ${partPaths.length} parts and join them: <code>${restoreCmd}</code>, then ${restoreHint}</i>`;
+        await context.telegram.sendDocumentFile(
+          chatId,
+          partPaths[i],
+          partCaption,
+          createMainKeyboard(settings)
+        );
+      }
+    }
   } catch (err: unknown) {
     const error = err as Error;
     const failMsg = zh
@@ -178,7 +210,10 @@ export async function handleBackupCommand(context: AppContext, chatId: ChatId): 
       : `❌ Failed to package or send backup: ${escapeHtml(error.message || String(error))}`;
     await replyWithHtml(context, chatId, failMsg, createMainKeyboard(settings));
   } finally {
-    // 5. Clean up temporary archive file
+    // 5. Clean up temporary archive file and split parts
     await fs.promises.unlink(archivePath).catch(() => undefined);
+    for (const part of partPaths) {
+      await fs.promises.unlink(part).catch(() => undefined);
+    }
   }
 }
