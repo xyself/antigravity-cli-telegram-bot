@@ -1,20 +1,30 @@
 import type { ModelOption } from "./types.js";
 
 export const DEFAULT_MODELS: ModelOption[] = [
-  { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)", maxContextWindow: 1_000_000 },
+  // Gemini 4 — added in agy 1.5.8
+  { id: "gemini-4-hydrogen-xhigh",  label: "Gemini 4 Hydrogen (XHigh)",  maxContextWindow: 1_000_000 },
+  { id: "gemini-4-hydrogen-high",   label: "Gemini 4 Hydrogen (High)",   maxContextWindow: 1_000_000 },
+  { id: "gemini-4-hydrogen-medium", label: "Gemini 4 Hydrogen (Medium)", maxContextWindow: 1_000_000 },
+  { id: "gemini-4-hydrogen-low",    label: "Gemini 4 Hydrogen (Low)",    maxContextWindow: 1_000_000 },
+  { id: "gemini-4-carbon-high",     label: "Gemini 4 Carbon (High)",     maxContextWindow: 2_000_000 },
+  { id: "gemini-4-carbon-medium",   label: "Gemini 4 Carbon (Medium)",   maxContextWindow: 2_000_000 },
+  { id: "gemini-4-carbon-low",      label: "Gemini 4 Carbon (Low)",      maxContextWindow: 2_000_000 },
+  // Gemini 3.x
+  { id: "gemini-3.8-flash-high",   label: "Gemini 3.8 Flash (High)",   maxContextWindow: 1_000_000 },
   { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)", maxContextWindow: 1_000_000 },
-  { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)", maxContextWindow: 1_000_000 },
-  { id: "gemini-3.7-flash-high", label: "Gemini 3.7 Flash (High)", maxContextWindow: 1_000_000 },
+  { id: "gemini-3.8-flash-low",    label: "Gemini 3.8 Flash (Low)",    maxContextWindow: 1_000_000 },
+  { id: "gemini-3.7-flash-high",   label: "Gemini 3.7 Flash (High)",   maxContextWindow: 1_000_000 },
   { id: "gemini-3.7-flash-medium", label: "Gemini 3.7 Flash (Medium)", maxContextWindow: 1_000_000 },
-  { id: "gemini-3.7-flash-low", label: "Gemini 3.7 Flash (Low)", maxContextWindow: 1_000_000 },
-  { id: "gemini-3.6-flash-high", label: "Gemini 3.6 Flash (High)", maxContextWindow: 1_000_000 },
+  { id: "gemini-3.7-flash-low",    label: "Gemini 3.7 Flash (Low)",    maxContextWindow: 1_000_000 },
+  { id: "gemini-3.6-flash-high",   label: "Gemini 3.6 Flash (High)",   maxContextWindow: 1_000_000 },
   { id: "gemini-3.6-flash-medium", label: "Gemini 3.6 Flash (Medium)", maxContextWindow: 1_000_000 },
-  { id: "gemini-3.6-flash-low", label: "Gemini 3.6 Flash (Low)", maxContextWindow: 1_000_000 },
-  { id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)", maxContextWindow: 2_000_000 },
-  { id: "gemini-3.1-pro-low", label: "Gemini 3.1 Pro (Low)", maxContextWindow: 2_000_000 },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Thinking)", maxContextWindow: 200_000 },
-  { id: "claude-opus-4-6-thinking", label: "Claude Opus 4.6 (Thinking)", maxContextWindow: 200_000 },
-  { id: "gpt-oss-120b-medium", label: "GPT-OSS 120B (Medium)", maxContextWindow: 128_000 },
+  { id: "gemini-3.6-flash-low",    label: "Gemini 3.6 Flash (Low)",    maxContextWindow: 1_000_000 },
+  { id: "gemini-3.1-pro-high",     label: "Gemini 3.1 Pro (High)",     maxContextWindow: 2_000_000 },
+  { id: "gemini-3.1-pro-low",      label: "Gemini 3.1 Pro (Low)",      maxContextWindow: 2_000_000 },
+  // Non-Gemini
+  { id: "claude-sonnet-4-6",         label: "Claude Sonnet 4.6 (Thinking)", maxContextWindow: 200_000 },
+  { id: "claude-opus-4-6-thinking",  label: "Claude Opus 4.6 (Thinking)",   maxContextWindow: 200_000 },
+  { id: "gpt-oss-120b-medium",       label: "GPT-OSS 120B (Medium)",        maxContextWindow: 128_000 },
 ];
 
 let activeModels: ModelOption[] = [...DEFAULT_MODELS];
@@ -44,7 +54,7 @@ export function parseAgyModelsOutput(output: string): ModelOption[] {
       if (id && label && !id.includes(" ")) {
         const lower = id.toLowerCase();
         let maxContextWindow = 1_000_000;
-        if (lower.includes("pro")) maxContextWindow = 2_000_000;
+        if (lower.includes("pro") || lower.includes("carbon")) maxContextWindow = 2_000_000;
         else if (lower.includes("claude")) maxContextWindow = 200_000;
         else if (lower.includes("gpt")) maxContextWindow = 128_000;
         models.push({ id, label, maxContextWindow });
@@ -64,6 +74,7 @@ export function getModelMaxContext(id: string | null): number {
   const match = getActiveModels().find((model) => model.id === id);
   if (match?.maxContextWindow) return match.maxContextWindow;
   const lower = id.toLowerCase();
+  if (lower.includes("carbon") || lower.includes("pro")) return 2_000_000;
   if (lower.includes("gemini")) return 1_000_000;
   if (lower.includes("claude")) return 200_000;
   if (lower.includes("gpt")) return 128_000;

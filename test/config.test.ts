@@ -71,6 +71,13 @@ claude-sonnet-4-6         Claude Sonnet 4.6 (Thinking)
 test("DEFAULT_MODELS contains supported Gemini, Claude, and GPT models without obsolete 3.5 models", () => {
   const ids = DEFAULT_MODELS.map((m) => m.id);
   assert.ok(!ids.some((id) => id.includes("gemini-3.5")), "gemini-3.5 models must not be in DEFAULT_MODELS");
+  assert.ok(ids.includes("gemini-4-hydrogen-xhigh"));
+  assert.ok(ids.includes("gemini-4-hydrogen-high"));
+  assert.ok(ids.includes("gemini-4-hydrogen-medium"));
+  assert.ok(ids.includes("gemini-4-hydrogen-low"));
+  assert.ok(ids.includes("gemini-4-carbon-high"));
+  assert.ok(ids.includes("gemini-4-carbon-medium"));
+  assert.ok(ids.includes("gemini-4-carbon-low"));
   assert.ok(ids.includes("gemini-3.8-flash-high"));
   assert.ok(ids.includes("gemini-3.8-flash-medium"));
   assert.ok(ids.includes("gemini-3.8-flash-low"));
@@ -85,7 +92,7 @@ test("DEFAULT_MODELS contains supported Gemini, Claude, and GPT models without o
   assert.ok(ids.includes("claude-sonnet-4-6"));
   assert.ok(ids.includes("claude-opus-4-6-thinking"));
   assert.ok(ids.includes("gpt-oss-120b-medium"));
-  assert.equal(ids.length, 14);
+  assert.equal(ids.length, 21);
 });
 
 test("loads default STT provider as none and TTS mode as off", () => {

@@ -184,9 +184,8 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
         return;
       }
       const now = Date.now();
-      const clientRateLimitWait = typeof (context.telegram as unknown as { isRateLimited?: () => boolean }).isRateLimited === "function" &&
-        (context.telegram as unknown as { isRateLimited: () => boolean }).isRateLimited()
-        ? ((context.telegram as unknown as { getRateLimitWaitMs?: () => number }).getRateLimitWaitMs?.() ?? 0)
+      const clientRateLimitWait = typeof context.telegram?.isRateLimited === "function" && context.telegram.isRateLimited()
+        ? (context.telegram.getRateLimitWaitMs?.() ?? 0)
         : 0;
       const rateLimitWait = Math.max(clientRateLimitWait, progressCooldownUntil > now ? progressCooldownUntil - now : 0);
       if (rateLimitWait > 0) {

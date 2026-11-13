@@ -54,7 +54,13 @@ export function buildArgs(config: AgyConfig, prompt: string, conversationId: str
       finalPrompt = `Please analyze the attached files:\n\n${attachmentBlock}`;
     }
   }
-  const args = ["--print", finalPrompt, "--output-format", outputFormat, "--print-timeout", effective.printTimeout || `${Math.ceil(effective.timeoutMs / 1000)}s`];
+  // Use idleTimeoutMs (if set) as the agy-visible print timeout so the process
+  // gracefully stops itself before the bot's idleTimer fires a SIGTERM.  Fall
+  // back to the full wall-clock timeoutMs when no idle window is configured.
+  const printTimeoutSec = effective.printTimeout
+    ? effective.printTimeout
+    : `${Math.ceil((effective.idleTimeoutMs ?? effective.timeoutMs) / 1000)}s`;
+  const args = ["--print", finalPrompt, "--output-format", outputFormat, "--print-timeout", printTimeoutSec];
   if (effective.project) args.push("--project", effective.project);
   if (effective.mode) args.push("--mode", effective.mode);
   if (effective.model) {
@@ -484,7 +490,7 @@ export function runAgy(config: AgyConfig, prompt: string, conversationId: string
       cwd: config.workspace, env: childEnvironment(), detached: true, stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = ""; let stderr = ""; let pendingLine = ""; let bytes = 0;
-    let outputLimited = false; let timedOut = false; let settled = false; let callbackError: Error | null = null;
+    let outputLimited = false; let timedOut = false; let timeoutReason: "idle" | "wall" | "" = ""; let settled = false; let callbackError: Error | null = null;
     const startedAt = Date.now();
     const finish = (callback: (value: never) => void, value: never): void => {
       if (settled) return; settled = true; signal?.removeEventListener("abort", abort); callback(value);
@@ -542,14 +548,17 @@ export function runAgy(config: AgyConfig, prompt: string, conversationId: string
     };
     const abort = (): void => { stop(true); settle(reject as (value: never) => void, new Error("AGY job cancelled") as never); };
     // Wall-clock absolute timeout (AGY_TIMEOUT_MS) — hard upper bound.
-    const wallTimer = setTimeout(() => { timedOut = true; stop(); }, config.timeoutMs);
+    const wallTimer = setTimeout(() => { timedOut = true; timeoutReason = "wall"; stop(); }, config.timeoutMs);
     // Idle timeout — resets on every stdout/stderr chunk so that normal long
     // tasks (many tool calls, subagents) are never killed while still making progress.
     // Only fires when AGY produces zero output for a sustained window, e.g. when
     // blocked inside a 503-retry loop.  Default: 10 min; override: AGY_IDLE_TIMEOUT_MS.
     const idleTimeoutMs = config.idleTimeoutMs ?? Math.min(600_000, config.timeoutMs);
-    let idleTimer = setTimeout(() => { timedOut = true; stop(); }, idleTimeoutMs);
-    const resetIdle = (): void => { clearTimeout(idleTimer); idleTimer = setTimeout(() => { timedOut = true; stop(); }, idleTimeoutMs); };
+    let idleTimer = setTimeout(() => { timedOut = true; timeoutReason = "idle"; stop(); }, idleTimeoutMs);
+    const resetIdle = (): void => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { timedOut = true; timeoutReason = "idle"; stop(); }, idleTimeoutMs);
+    };
     // Unified settle helper — cancels both timers before resolving/rejecting.
     const settle = (callback: (value: never) => void, value: never): void => {
       clearTimeout(idleTimer); clearTimeout(wallTimer); finish(callback, value);
@@ -567,7 +576,12 @@ export function runAgy(config: AgyConfig, prompt: string, conversationId: string
     child.on("error", (error) => settle(reject as (value: never) => void, error as never));
     child.on("close", (code, signalName) => {
       if (outputFormat === "stream-json") emit(pendingLine);
-      if (timedOut) return settle(reject as (value: never) => void, new Error(`AGY timed out after ${config.timeoutMs}ms`) as never);
+      if (timedOut) {
+        const timeoutMsg = timeoutReason === "idle"
+          ? `AGY idle timed out after ${idleTimeoutMs}ms with no output`
+          : `AGY timed out after ${config.timeoutMs}ms`;
+        return settle(reject as (value: never) => void, new Error(timeoutMsg) as never);
+      }
       if (outputLimited) return settle(reject as (value: never) => void, new Error(`AGY output exceeded ${config.maxOutputBytes} bytes`) as never);
       if (code !== 0) {
         const detail = stderr.trim().replace(/\s+/g, " ").slice(0, 1000);

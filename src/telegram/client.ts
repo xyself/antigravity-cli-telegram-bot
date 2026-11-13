@@ -135,7 +135,16 @@ export function parseChatTarget(chatId: ChatId): { chatId: number | string; mess
   return { chatId };
 }
 
-export class TelegramClient {
+/** Subset of TelegramClient that exposes Telegram API rate-limit state.
+ *  Declared as a standalone interface so callers can consume it without
+ *  resorting to `as unknown as` casts. */
+export interface ITelegramRateLimiter {
+  isRateLimited(): boolean;
+  getRateLimitWaitMs(): number;
+  recordRateLimit(waitSec: number): void;
+}
+
+export class TelegramClient implements ITelegramRateLimiter {
   private readonly root: string;
   private rateLimitResetAt = 0;
 
