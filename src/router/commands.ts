@@ -24,7 +24,7 @@ import {
   remoteControlKeyboard,
 } from "../ui/inline-keyboards.js";
 import { sessionInfoHtml, sessionOptionUsage, sessionText, usageReport } from "../ui/messages.js";
-import { cliOutput, showMain, showResumeMenu } from "../ui/screens.js";
+import { cliOutput, formatChangelogSummary, showMain, showResumeMenu } from "../ui/screens.js";
 import { reply, replyWithHtml } from "../ui/reply.js";
 import { enqueueJob } from "../usecases/enqueue.js";
 import { refreshModels, selectModel } from "../usecases/model-selection.js";
@@ -520,7 +520,7 @@ command("/agents")(async ({ context, chatId }) => {
 
 command("/changelog")(async ({ context, chatId }) => {
   const output = await runAgyCommand(context.config.agy, ["changelog"]).catch((error) => `Could not read AGY changelog: ${(error as Error).message}`);
-  await reply(context, chatId, `AGY changelog\n\n${output}`, createMainKeyboard(settingsFor(context, chatId)));
+  await reply(context, chatId, `AGY changelog\n\n${formatChangelogSummary(output)}`, createMainKeyboard(settingsFor(context, chatId)));
 });
 
 command("/plugins")(async ({ context, chatId }) => {

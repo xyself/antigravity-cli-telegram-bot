@@ -109,6 +109,50 @@ export function cliCommandArgs(command: CliCommand): string[] {
   return ["--help"];
 }
 
+function truncateText(text: string, maxChars: number): string {
+  const chars = Array.from(text);
+  return chars.length <= maxChars ? text : chars.slice(0, maxChars).join("");
+}
+
+// `agy changelog` prints the full history (1000+ lines), which Telegram
+// would split into dozens of messages. Show only the latest version's
+// first few entries instead, with a pointer to the full log.
+export function formatChangelogSummary(output: string): string {
+  const lines = output.split(/\r?\n/);
+  const versionHeader = /^(\d+\.\d+\.\d+):\s*$/;
+  let end = lines.length;
+  let seenFirst = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (versionHeader.test(lines[i].trim())) {
+      if (seenFirst) {
+        end = i;
+        break;
+      }
+      seenFirst = true;
+    }
+  }
+  const section = lines.slice(0, end);
+  while (section.length && !section[section.length - 1].trim()) section.pop();
+  if (!seenFirst) {
+    // Not a changelog (e.g. an error message): keep it short, don't mangle it.
+    const text = output.trim();
+    return text.length > 3000 ? `${truncateText(text, 3000)}\n…` : text;
+  }
+  const version = section[0].trim().replace(/:$/, "");
+  const bullets = section.filter((line) => line.trimStart().startsWith("·"));
+  const shown = bullets.slice(0, 5).map((line) => {
+    const text = line.trim();
+    return text.length > 300 ? `${truncateText(text, 300)}…` : text;
+  });
+  const totalLines = lines.filter((line) => line.trim()).length;
+  let result = `${version}:\n${shown.join("\n")}`;
+  if (bullets.length > shown.length) {
+    result += `\n…（该版本还有 ${bullets.length - shown.length} 条未显示）`;
+  }
+  result += `\n\n仅显示最新版本 ${version}，全文共 ${totalLines} 行。完整日志请在终端运行 agy changelog 查看。`;
+  return result;
+}
+
 export async function cliOutput(context: AppContext, chatId: ChatId, messageId: number, command: CliCommand): Promise<void> {
   if (command === "skills") {
     await context.telegram.editMessageText(chatId, messageId, "Loading AGY skills...");
@@ -124,7 +168,8 @@ export async function cliOutput(context: AppContext, chatId: ChatId, messageId: 
   try {
     const output = await runAgyCommand(context.config.agy, cliCommandArgs(command));
     const title = command === "help" ? "AGY CLI help" : `AGY ${command}`;
-    await reply(context, chatId, `${title}\n\n${output}`, createMainKeyboard(settingsFor(context, chatId)));
+    const body = command === "changelog" ? formatChangelogSummary(output) : output;
+    await reply(context, chatId, `${title}\n\n${body}`, createMainKeyboard(settingsFor(context, chatId)));
   } catch (error) {
     await reply(context, chatId, `Could not read AGY ${command}: ${(error as Error).message}`, createMainKeyboard(settingsFor(context, chatId)));
   }
