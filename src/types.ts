@@ -153,8 +153,6 @@ export interface InFlightJob {
   startedAt: number;
   subagentRole?: string | null;
   conversationId?: string | null;
-  /** Times this job has already been auto-resumed after a service restart. Caps the restart loop. */
-  resumeCount?: number;
 }
 
 export interface PersistedState {
