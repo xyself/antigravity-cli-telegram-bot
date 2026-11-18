@@ -15,6 +15,8 @@ export interface QueueJob {
   mediaPaths?: string[];
   mediaType?: string;
   wasVoiceInput?: boolean;
+  /** Times this job has already been auto-resumed after a service restart. */
+  resumeCount?: number;
 }
 export interface QueueStatus { active: (QueueJob & { cancel: () => boolean }) | null; queued: number; totalQueued: number }
 type Worker = (job: QueueJob, isCancelled: () => boolean) => Promise<void>;

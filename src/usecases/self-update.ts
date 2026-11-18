@@ -26,7 +26,10 @@ export async function writeRestartNotice(context: AppContext, notice: Omit<{ cha
 export function scheduleServiceRestart(delayMs: number): void {
   if (process.platform === "linux") {
     setTimeout(() => {
-      spawn("systemctl", ["--user", "restart", "agy-telegram.service"], { detached: true, stdio: "ignore" }).unref();
+      // NOTE: the bot runs as a *system* service (agy-telegram.service), not a
+      // user service, so `--user` never restarts it. sudo is passwordless for
+      // the ubuntu user on this host.
+      spawn("sudo", ["systemctl", "restart", "agy-telegram.service"], { detached: true, stdio: "ignore" }).unref();
     }, delayMs);
   }
 }

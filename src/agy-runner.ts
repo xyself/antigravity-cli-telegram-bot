@@ -54,6 +54,10 @@ export function buildArgs(config: AgyConfig, prompt: string, conversationId: str
       finalPrompt = `Please analyze the attached files:\n\n${attachmentBlock}`;
     }
   }
+  // Self-protection: the Telegram bot running this session must never be
+  // modified, reinstalled, or restarted by the agent itself. A restart kills
+  // this session and the bot re-runs the same prompt, looping forever.
+  finalPrompt += "\n\n[Self-protection: do NOT modify, reinstall, or restart the Telegram bot running this session (~/antigravity-cli-telegram-bot, /usr/local/lib/node_modules/agy-telegram). Never run 'npm install -g' for it or 'systemctl restart/stop agy-telegram'. Only change /etc/agy-telegram.env variables the user explicitly named, and never restart the service afterwards - report that a manual restart is needed.]";
   // Use idleTimeoutMs (if set) as the agy-visible print timeout so the process
   // gracefully stops itself before the bot's idleTimer fires a SIGTERM.  Fall
   // back to the full wall-clock timeoutMs when no idle window is configured.

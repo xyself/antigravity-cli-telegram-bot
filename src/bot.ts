@@ -194,6 +194,18 @@ export async function resumeInterruptedJobs(context: AppContext): Promise<void> 
         }
       } else if (job.prompt || job.kind === "usage" || job.kind === "credits" || job.kind === "context" || job.kind === "compact") {
         const promptSnippet = job.prompt ? ` (Prompt: <i>"${escapeHtml(job.prompt.slice(0, 60))}${job.prompt.length > 60 ? "..." : ""}"</i>)` : "";
+        const resumeCount = job.resumeCount ?? 0;
+        if (resumeCount >= 1) {
+          // Already auto-resumed once: do NOT re-run, or a self-restarting
+          // agent loops forever (restart -> resume -> restart -> ...).
+          await context.telegram.sendMessage(
+            chatId,
+            `\u269a <b>AGY Gateway restarted</b>\n\n\u4e0a\u4e00\u4e2a\u8bf7\u6c42\u5df2\u88ab\u91cd\u542f\u6253\u65ad\u8fc7\u4e00\u6b21\uff0c\u4e3a\u907f\u514d\u5faa\u73af\u91cd\u542f\uff0c\u8fd9\u6b21\u4e0d\u4f1a\u81ea\u52a8\u91cd\u8dd1\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\uff0c\u6216\u53d1 /new \u5f00\u65b0\u4f1a\u8bdd\u3002`,
+            createMainKeyboard(settingsFor(context, chatId)),
+            "HTML"
+          ).catch(() => undefined);
+          continue;
+        }
         await context.telegram.sendMessage(
           chatId,
           `⚡ <b>AGY Gateway restarted</b>\n\nYour previous request was interrupted by a restart${promptSnippet}.\n<i>Resuming execution now...</i>`,
@@ -204,6 +216,7 @@ export async function resumeInterruptedJobs(context: AppContext): Promise<void> 
         enqueueJob(context, chatId, {
           kind: (job.kind as "prompt" | "usage" | "credits" | "context" | "compact") || "prompt",
           prompt: job.prompt,
+          resumeCount: resumeCount + 1,
           imagePath: job.imagePath,
           imagePaths: job.imagePaths,
           documentPath: job.documentPath,

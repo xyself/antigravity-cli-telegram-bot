@@ -339,6 +339,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
         mediaPath: job.mediaPath,
         mediaPaths: job.mediaPaths,
         mediaType: job.mediaType,
+        resumeCount: job.resumeCount ?? 0,
         startedAt: Date.now(),
       });
       result = await runAgy(effectiveAgyConfig, job.prompt || "", session?.conversationId || null, {
