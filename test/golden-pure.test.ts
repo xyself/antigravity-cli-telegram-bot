@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SELF_PROTECTION_NOTICE, buildArgs, parseCommandArgs, parseStreamOutput } from "../src/agy-runner.js";
+import { buildArgs, parseCommandArgs, parseStreamOutput } from "../src/agy-runner.js";
 import { formatRelativeTime, isUuid, parseTimestamp } from "../src/db.js";
 import { getModelMaxContext, modelLabel, renderContextProgressBar } from "../src/models.js";
 import type { AgyConfig } from "../src/types.js";
@@ -23,17 +23,17 @@ const baseConfig: AgyConfig = {
 
 test("golden: buildArgs emits exact CLI contract for a default stream-json prompt", () => {
   const args = buildArgs(baseConfig, "hello", null, {});
-  assert.deepEqual(args, ["--print", `hello\n\n${SELF_PROTECTION_NOTICE}`, "--output-format", "stream-json", "--print-timeout", "60s", "--mode", "accept-edits", "--effort", "high", "--add-dir", "/srv/ws"]);
+  assert.deepEqual(args, ["--print", "hello", "--output-format", "stream-json", "--print-timeout", "60s", "--mode", "accept-edits", "--effort", "high", "--add-dir", "/srv/ws"]);
 });
 
 test("golden: buildArgs injects attachment notes and add-dir for image and document runs", () => {
   const imageArgs = buildArgs(baseConfig, "", null, { imagePath: "/tmp/pic.png" });
-  assert.equal(imageArgs[1], `Please analyze this image: /tmp/pic.png\n\n${SELF_PROTECTION_NOTICE}`);
+  assert.equal(imageArgs[1], "Please analyze this image: /tmp/pic.png");
   assert.ok(imageArgs.includes("--add-dir"));
   assert.ok(imageArgs.includes("/tmp"));
 
   const docArgs = buildArgs(baseConfig, "summarize", "conv-1", { documentPath: "/ws/doc.pdf" });
-  assert.equal(docArgs[1], `summarize\n\n[Document attached: /ws/doc.pdf]\n\n${SELF_PROTECTION_NOTICE}`);
+  assert.equal(docArgs[1], "summarize\n\n[Document attached: /ws/doc.pdf]");
   assert.ok(docArgs.includes("--conversation"));
   assert.ok(docArgs.includes("conv-1"));
 });
