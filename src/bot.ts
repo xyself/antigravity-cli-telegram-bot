@@ -83,6 +83,7 @@ export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "restart", description: "Restart the AGY Telegram service" },
   { command: "agy", description: "Run a custom non-interactive AGY command" },
   { command: "agy_confirm", description: "Confirm a pending AGY command" },
+  { command: "remote_control", description: "Manage Remote Control daemon (status / start / stop)" },
 ];
 
 export const BOT_COMMANDS_ZH: Array<{ command: string; description: string }> = [
@@ -134,6 +135,7 @@ export const BOT_COMMANDS_ZH: Array<{ command: string; description: string }> = 
   { command: "restart", description: "重启 AGY Telegram 系统服务" },
   { command: "agy", description: "执行非交互式原生 AGY 命令行指令" },
   { command: "agy_confirm", description: "二次确认并执行高危 AGY 命令" },
+  { command: "remote_control", description: "管理远程控制守护进程（status / start / stop）" },
 ];
 
 export async function announcePendingRestartNotice(context: AppContext): Promise<void> {

@@ -21,6 +21,7 @@ import {
   ttsKeyboard,
   verboseKeyboard,
   workspaceKeyboard,
+  remoteControlKeyboard,
 } from "../ui/inline-keyboards.js";
 import { sessionInfoHtml, sessionOptionUsage, sessionText, usageReport } from "../ui/messages.js";
 import { cliOutput, showMain, showResumeMenu } from "../ui/screens.js";
@@ -663,6 +664,45 @@ command("/agy-confirm")(async ({ context, chatId }) => {
   const pending = context.pendingDangerousCommands.get(String(chatId));
   if (!pending) await reply(context, chatId, "There is no pending dangerous AGY command.", createMainKeyboard(settingsFor(context, chatId)));
   else await runCustomAgy(context, chatId, pending, true);
+});
+
+command("/remote_control", "/remote-control", "/rc")(async ({ context, chatId, args }) => {
+  const zh = isZh(settingsFor(context, chatId), context, chatId);
+  const sub = (args[0] || "").toLowerCase();
+  let subArgs: string[] | null = null;
+  if (sub === "start" || sub === "启动" || sub === "on") {
+    subArgs = ["remote-control", "start"];
+  } else if (sub === "stop" || sub === "停止" || sub === "off") {
+    subArgs = ["remote-control", "stop"];
+  }
+
+  try {
+    if (subArgs) {
+      await runAgyCommand(context.config.agy, subArgs, 15_000);
+    }
+    const output = await runAgyCommand(context.config.agy, ["remote-control", "status"], 10_000);
+    const active = /Daemon status:\s*active/i.test(output);
+    const instanceMatch = output.match(/Instance name:\s*(.+)/);
+    const instanceLine = instanceMatch ? instanceMatch[1].trim() : "";
+    const sinceMatch = output.match(/Active since:\s*(.+)/);
+    const sinceLine = sinceMatch ? sinceMatch[1].trim() : "";
+
+    let statusText: string;
+    if (active) {
+      statusText = zh
+        ? `🟢 <b>远程控制 (Remote Control)：运行中</b>\n\n📌 <b>实例名称</b>：<code>${escapeHtml(instanceLine)}</code>${sinceLine ? `\n⏱️ <b>启动时间</b>：${escapeHtml(sinceLine)}` : ""}\n\n可在 <a href="https://antigravity.google.com">antigravity.google.com</a> 找到此机器。\n点击下方按钮可关闭或刷新。`
+        : `🟢 <b>Remote Control: Active</b>\n\n📌 <b>Instance</b>: <code>${escapeHtml(instanceLine)}</code>${sinceLine ? `\n⏱️ <b>Since</b>: ${escapeHtml(sinceLine)}` : ""}\n\nFind it at <a href="https://antigravity.google.com">antigravity.google.com</a>.\nClick below to stop or refresh.`;
+    } else {
+      statusText = zh
+        ? `🔴 <b>远程控制 (Remote Control)：未运行 (inactive)</b>\n\n📌 <b>实例名称</b>：<code>${escapeHtml(instanceLine)}</code>\n\n点击下方按钮开启，或输入 <code>/remote_control start</code>。`
+        : `🔴 <b>Remote Control: Inactive</b>\n\n📌 <b>Instance</b>: <code>${escapeHtml(instanceLine)}</code>\n\nClick below to start, or type <code>/remote_control start</code>.`;
+    }
+
+    await replyWithHtml(context, chatId, statusText, remoteControlKeyboard(active, zh));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await reply(context, chatId, `❌ ${zh ? "执行失败" : "Failed"}: ${msg}`, createMainKeyboard(settingsFor(context, chatId)));
+  }
 });
 
 export async function handleCommand(context: AppContext, message: TelegramMessage, command: string, args: string[]): Promise<boolean> {

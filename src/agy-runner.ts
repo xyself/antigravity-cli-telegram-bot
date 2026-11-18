@@ -577,9 +577,10 @@ export function runAgy(config: AgyConfig, prompt: string, conversationId: string
     child.on("close", (code, signalName) => {
       if (outputFormat === "stream-json") emit(pendingLine);
       if (timedOut) {
+        const timeoutMinutes = Math.round((timeoutReason === "idle" ? idleTimeoutMs : config.timeoutMs) / 60000);
         const timeoutMsg = timeoutReason === "idle"
-          ? `AGY idle timed out after ${idleTimeoutMs}ms with no output`
-          : `AGY timed out after ${config.timeoutMs}ms`;
+          ? `AGY 静默超时（持续 ${timeoutMinutes} 分钟无任何输出，可能卡在网络 503 重试或耗时任务）`
+          : `AGY 执行总耗时超过限制（已达 ${timeoutMinutes} 分钟）`;
         return settle(reject as (value: never) => void, new Error(timeoutMsg) as never);
       }
       if (outputLimited) return settle(reject as (value: never) => void, new Error(`AGY output exceeded ${config.maxOutputBytes} bytes`) as never);

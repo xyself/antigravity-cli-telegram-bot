@@ -11,6 +11,17 @@ export function backKeyboard(zh = false): InlineKeyboardMarkup {
   return { inline_keyboard: [[button(zh ? "‹ 返回" : "‹ Back", "menu:main")]] };
 }
 
+export function remoteControlKeyboard(active: boolean, zh = false): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      active
+        ? [button(zh ? "🔴 关闭远程控制" : "🔴 Stop Remote Control", "action:remote-stop")]
+        : [button(zh ? "🟢 开启远程控制" : "🟢 Start Remote Control", "action:remote-start")],
+      [button(zh ? "🔄 刷新状态" : "🔄 Refresh", "menu:remote-control"), button(zh ? "‹ 返回 CLI 工具" : "‹ Back", "menu:clitools")],
+    ],
+  };
+}
+
 export function contextActionsKeyboard(zh = false): InlineKeyboardMarkup {
   return {
     inline_keyboard: [
@@ -219,12 +230,13 @@ export function mainInlineKeyboard(context?: AppContext, chatId?: ChatId): Inlin
 
 export function modeSandboxKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
   const settings = settingsFor(context, chatId);
+  const zh = isZh(settings, context, chatId);
   return {
     inline_keyboard: [
-      [button(`⚙️ Mode: ${settings.mode}`, "menu:mode"), button(`🛡️ Sandbox: ${settings.sandbox ? "On" : "Off"}`, "menu:sandbox")],
-      [button(`Verbose: ${settings.verbose || "detailed"}`, "menu:verbose"), button("Session Info", "menu:session")],
-      [button(`🏷️ Auto-Topic: ${settings.autoTopicRename ? "On" : "Off"}`, "toggle:autotopic")],
-      [button("‹ Back", "menu:main")],
+      [button(`⚙️ ${zh ? "模式" : "Mode"}: ${settings.mode}`, "menu:mode"), button(`🛡️ ${zh ? "沙箱" : "Sandbox"}: ${settings.sandbox ? (zh ? "开" : "On") : (zh ? "关" : "Off")}`, "menu:sandbox")],
+      [button(`${zh ? "详细程度" : "Verbose"}: ${settings.verbose || "detailed"}`, "menu:verbose"), button(zh ? "会话信息" : "Session Info", "menu:session")],
+      [button(`🏷️ ${zh ? "自动话题" : "Auto-Topic"}: ${settings.autoTopicRename ? (zh ? "开" : "On") : (zh ? "关" : "Off")}`, "toggle:autotopic")],
+      [button(zh ? "‹ 返回" : "‹ Back", "menu:main")],
     ],
   };
 }
@@ -232,17 +244,19 @@ export function modeSandboxKeyboard(context: AppContext, chatId: ChatId): Inline
 export function cliToolsKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
   const session = context.state.session(chatId);
   const settings = settingsFor(context, chatId);
+  const zh = isZh(settings, context, chatId);
   return {
     inline_keyboard: [
-      [button("⚙️ Mode & Sandbox", "menu:modesandbox"), button("🛠️ CLI Options", "menu:cli")],
-      [button("AGY Agents", "cli:agents"), button("⚡ Skills", "cli:skills")],
-      [button("🧩 Plugins", "menu:plugins"), button("🛠️ MCP", "menu:mcp")],
-      [button(contextButtonLabel(session), "action:context"), button("Custom /agy", "menu:custom")],
-      [button("Changelog", "cli:changelog"), button("CLI Help", "cli:help")],
-      [button("CLI Version", "cli:version"), button("Update CLI", "cli:update")],
-      [button("🔄 Update Bot", "action:update_bot"), button("💾 Set as Default", "action:setdefault")],
-      [button("New session", "action:new"), button(`🏷️ Auto-Topic: ${settings.autoTopicRename ? "On" : "Off"}`, "toggle:autotopic")],
-      [button("‹ Back", "menu:main")],
+      [button(zh ? "⚙️ 模式与沙箱" : "⚙️ Mode & Sandbox", "menu:modesandbox"), button(zh ? "🛠️ CLI 选项" : "🛠️ CLI Options", "menu:cli")],
+      [button(zh ? "🤖 AGY Agents" : "AGY Agents", "cli:agents"), button(zh ? "⚡ 技能" : "⚡ Skills", "cli:skills")],
+      [button(zh ? "🧩 插件" : "🧩 Plugins", "menu:plugins"), button("🛠️ MCP", "menu:mcp")],
+      [button(contextButtonLabel(session, zh), "action:context"), button(zh ? "自定义 /agy" : "Custom /agy", "menu:custom")],
+      [button(zh ? "更新日志" : "Changelog", "cli:changelog"), button(zh ? "CLI 帮助" : "CLI Help", "cli:help")],
+      [button(zh ? "CLI 版本" : "CLI Version", "cli:version"), button(zh ? "更新 CLI" : "Update CLI", "cli:update")],
+      [button(zh ? "🔄 更新 Bot" : "🔄 Update Bot", "action:update_bot"), button(zh ? "💾 设为默认" : "💾 Set as Default", "action:setdefault")],
+      [button(zh ? "新会话" : "New session", "action:new"), button(zh ? `🏷️ 自动话题: ${settings.autoTopicRename ? "开" : "关"}` : `🏷️ Auto-Topic: ${settings.autoTopicRename ? "On" : "Off"}`, "toggle:autotopic")],
+      [button(zh ? "🌐 远程控制" : "🌐 Remote Control", "menu:remote-control")],
+      [button(zh ? "‹ 返回" : "‹ Back", "menu:main")],
     ],
   };
 }
@@ -261,15 +275,16 @@ export function voiceSettingsKeyboard(context: AppContext, chatId: ChatId): Inli
 
 export function cliOptionsKeyboard(context: AppContext, chatId: ChatId): InlineKeyboardMarkup {
   const settings = settingsFor(context, chatId);
+  const zh = isZh(settings, context, chatId);
   return {
     inline_keyboard: [
-      [button("Project", "cli:project"), button("Agent", "cli:agent")],
-      [button(`Continue: ${settings.continueSession ? "on" : "off"}`, "toggle:continue"), button(`New project: ${settings.newProject ? "on" : "off"}`, "toggle:new-project")],
-      [button(`Output: ${settings.outputFormat}`, "menu:output"), button(`Slash cmds: ${settings.disableSlashCommands ? "off" : "on"}`, "toggle:disable-slash")],
-      [button("Add directory", "cli:add-dir"), button("JSON schema", "cli:json-schema")],
-      [button("Log file", "cli:log-file"), button("Print timeout", "cli:print-timeout")],
-      [button("Conversation ID", "cli:conversation"), button("Prompt flags", "cli:prompt")],
-      [button("‹ Back", "menu:clitools")],
+      [button(zh ? "项目" : "Project", "cli:project"), button("Agent", "cli:agent")],
+      [button(`${zh ? "继续会话" : "Continue"}: ${settings.continueSession ? "on" : "off"}`, "toggle:continue"), button(`${zh ? "新项目" : "New project"}: ${settings.newProject ? "on" : "off"}`, "toggle:new-project")],
+      [button(`${zh ? "输出格式" : "Output"}: ${settings.outputFormat}`, "menu:output"), button(`${zh ? "斜杠命令" : "Slash cmds"}: ${settings.disableSlashCommands ? "off" : "on"}`, "toggle:disable-slash")],
+      [button(zh ? "添加目录" : "Add directory", "cli:add-dir"), button(zh ? "JSON 模式" : "JSON schema", "cli:json-schema")],
+      [button(zh ? "日志文件" : "Log file", "cli:log-file"), button(zh ? "打印超时" : "Print timeout", "cli:print-timeout")],
+      [button(zh ? "会话 ID" : "Conversation ID", "cli:conversation"), button(zh ? "提示词选项" : "Prompt flags", "cli:prompt")],
+      [button(zh ? "‹ 返回" : "‹ Back", "menu:clitools")],
     ],
   };
 }

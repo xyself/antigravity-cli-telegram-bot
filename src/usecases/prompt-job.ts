@@ -116,7 +116,7 @@ async function runPtyReportJob(context: AppContext, job: QueueJob & { kind: PtyR
   } catch (error) {
     if (!isCancelled()) {
       const errorMsg = (error as Error).message;
-      if (progressMessage) await context.telegram.editMessageText(job.chatId, progressMessage.message_id, `${spec.errorPrefix} ${errorMsg}`).catch(() => undefined);
+      if (progressMessage) await context.telegram.deleteMessage(job.chatId, progressMessage.message_id).catch(() => undefined);
       await reply(context, job.chatId, `${spec.errorPrefix} ${errorMsg}`, createMainKeyboard(settingsFor(context, job.chatId)));
     }
   }
@@ -781,10 +781,11 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
     }
   } catch (error) {
     if (isCancelled() || controller.signal.aborted || (error instanceof Error && error.message.includes("cancelled"))) {
-      if (progressMessage) await context.telegram.editMessageText(job.chatId, progressMessage.message_id, `${wsNotice}⛔ Request cancelled by user.`, undefined, "HTML").catch(() => undefined);
+      if (progressMessage) await context.telegram.deleteMessage(job.chatId, progressMessage.message_id).catch(() => undefined);
+      await reply(context, job.chatId, `${wsNotice}⛔ 请求已由用户取消。`, createMainKeyboard(settingsFor(context, job.chatId))).catch(() => undefined);
     } else {
-      if (progressMessage) await context.telegram.editMessageText(job.chatId, progressMessage.message_id, `${wsNotice}AGY failed: ${(error as Error).message}`, undefined, "HTML").catch(() => undefined);
-      await reply(context, job.chatId, `AGY failed: ${(error as Error).message}`, createMainKeyboard(settingsFor(context, job.chatId))).catch((err) => {
+      if (progressMessage) await context.telegram.deleteMessage(job.chatId, progressMessage.message_id).catch(() => undefined);
+      await reply(context, job.chatId, `${wsNotice}❌ AGY failed: ${(error as Error).message}`, createMainKeyboard(settingsFor(context, job.chatId))).catch((err) => {
         console.error(`[processJob] Failed to send error message to ${job.chatId}:`, (err as Error).message);
       });
     }

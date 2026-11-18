@@ -13,6 +13,7 @@ import {
   modeSandboxKeyboard,
   modelKeyboard,
   outputFormatKeyboard,
+  remoteControlKeyboard,
   resumeKeyboard,
   sandboxKeyboard,
   sttKeyboard,
@@ -164,7 +165,7 @@ export async function showMenu(context: AppContext, chatId: ChatId, messageId: n
   if (kind === "resume") return showResumeMenu(context, chatId, page, messageId);
   if (kind === "usage") { enqueueJob(context, chatId, { kind: "usage" }); return; }
   if (kind === "credits") { enqueueJob(context, chatId, { kind: "credits" }); return; }
-  if (kind === "cli") return context.telegram.editMessageText(chatId, messageId, "All AGY CLI flags are available with /agy. Common session flags can be set here; options that need a path or value have a command example.", cliOptionsKeyboard(context, chatId));
+  if (kind === "cli") return context.telegram.editMessageText(chatId, messageId, zh ? "所有 AGY CLI 选项均可通过 /agy 使用。常用会话选项可在此设置；需要路径或值的选项请参考命令示例。" : "All AGY CLI flags are available with /agy. Common session flags can be set here; options that need a path or value have a command example.", cliOptionsKeyboard(context, chatId));
   if (kind === "output") return context.telegram.editMessageText(chatId, messageId, "Select the output format used by future normal prompts:", outputFormatKeyboard(context, chatId));
   if (kind === "custom") return context.telegram.editMessageText(chatId, messageId, "Custom AGY command\n\nUse /agy followed by any non-interactive AGY arguments. Example:\n/agy --print \"Explain this project\" --output-format text\n\nInteractive TTY mode is unavailable through Telegram.", backKeyboard());
   if (kind === "plugins") return context.telegram.editMessageText(chatId, messageId, "Plugin commands\n\nRead-only:\n/agy plugin list\n\nMutating commands require /agy-confirm after the bot asks for confirmation:\n/agy plugin install NAME\n/agy plugin uninstall NAME\n/agy plugin enable NAME\n/agy plugin disable NAME\n/agy update", backKeyboard());
@@ -212,8 +213,8 @@ export async function showMenu(context: AppContext, chatId: ChatId, messageId: n
       "HTML"
     );
   }
-  if (kind === "modesandbox") return context.telegram.editMessageText(chatId, messageId, "Configure execution mode, sandbox, verbosity, and session details:", modeSandboxKeyboard(context, chatId));
-  if (kind === "clitools") return context.telegram.editMessageText(chatId, messageId, "CLI options, telemetry, and system maintenance:", cliToolsKeyboard(context, chatId));
+  if (kind === "modesandbox") return context.telegram.editMessageText(chatId, messageId, zh ? "配置执行模式、沙箱、详细程度与会话详情：" : "Configure execution mode, sandbox, verbosity, and session details:", modeSandboxKeyboard(context, chatId));
+  if (kind === "clitools") return context.telegram.editMessageText(chatId, messageId, zh ? "CLI 选项、遥测与系统维护：" : "CLI options, telemetry, and system maintenance:", cliToolsKeyboard(context, chatId));
   if (kind === "voice") return context.telegram.editMessageText(chatId, messageId, "Configure Speech-to-Text (STT) and Text-to-Speech (TTS):", voiceSettingsKeyboard(context, chatId));
   if (kind === "stt") return context.telegram.editMessageText(chatId, messageId, "Select STT option to configure:", sttKeyboard(context, chatId));
   if (kind === "stt:provider") return context.telegram.editMessageText(chatId, messageId, "Select STT provider:", sttProviderKeyboard(context, chatId));
@@ -222,4 +223,29 @@ export async function showMenu(context: AppContext, chatId: ChatId, messageId: n
   if (kind === "tts") return context.telegram.editMessageText(chatId, messageId, "Select TTS option to configure:", ttsKeyboard(context, chatId));
   if (kind === "tts:mode") return context.telegram.editMessageText(chatId, messageId, "Select TTS response mode:", ttsModeKeyboard(context, chatId));
   if (kind === "tts:voice") return context.telegram.editMessageText(chatId, messageId, "Select TTS voice:", ttsVoiceKeyboard(context, chatId));
+  if (kind === "remote-control") {
+    let active = false;
+    let statusText = "";
+    try {
+      const output = await runAgyCommand(context.config.agy, ["remote-control", "status"], 10_000);
+      active = /Daemon status:\s*active/i.test(output);
+      // Extract instance name line if present
+      const instanceMatch = output.match(/Instance name:\s*(.+)/);
+      const instanceLine = instanceMatch ? instanceMatch[1].trim() : "";
+      const sinceMatch = output.match(/Active since:\s*(.+)/);
+      const sinceLine = sinceMatch ? sinceMatch[1].trim() : "";
+      if (active) {
+        statusText = zh
+          ? `🟢 远程控制：<b>运行中</b>\n\n实例名称：<code>${instanceLine}</code>${sinceLine ? `\n启动时间：${sinceLine}` : ""}\n\n可在 antigravity.google.com 找到此实例。`
+          : `🟢 Remote Control: <b>Active</b>\n\nInstance: <code>${instanceLine}</code>${sinceLine ? `\nSince: ${sinceLine}` : ""}\n\nFind it at antigravity.google.com`;
+      } else {
+        statusText = zh
+          ? `🔴 远程控制：<b>未运行</b>\n\n点击下方按钮开启，实例将在 1 分钟内出现在 antigravity.google.com。`
+          : `🔴 Remote Control: <b>Inactive</b>\n\nClick the button below to start. The instance will appear at antigravity.google.com within a minute.`;
+      }
+    } catch {
+      statusText = zh ? "⚠️ 无法查询远程控制状态。" : "⚠️ Could not query remote control status.";
+    }
+    return context.telegram.editMessageText(chatId, messageId, statusText, remoteControlKeyboard(active, zh), "HTML");
+  }
 }

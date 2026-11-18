@@ -33,6 +33,7 @@ import { isWhisperInstalled, warmupWhisperLocal } from "../stt/stt-service.js";
 import { BOT_COMMANDS, BOT_COMMANDS_ZH } from "../bot.js";
 import { authorizedCallback } from "./auth.js";
 import { parseCallbackAction } from "./callback-parser.js";
+import { runAgyCommand } from "../agy-runner.js";
 
 export function sessionKeyForCallback(callback: TelegramCallbackQuery): string {
   const msg = callback.message;
@@ -103,6 +104,22 @@ export async function handleCallback(context: AppContext, callback: TelegramCall
       const result = context.queue.cancelForChat(chatId);
       await context.state.setSession(chatId, { lastMenuMessageId: undefined, activeMenuScreen: undefined });
       await context.telegram.editMessageText(chatId, messageId, `Cancelled: ${result.removed} queued, active=${result.activeCancelled ? "yes" : "no"}.`, { inline_keyboard: [] });
+      return;
+    }
+    case "remote-start":
+    case "remote-stop": {
+      const zh = isZh(settingsFor(context, chatId), context, chatId);
+      const isStart = action.kind === "remote-start";
+      const subArgs = isStart ? ["remote-control", "start"] : ["remote-control", "stop"];
+      const pendingText = zh
+        ? (isStart ? "⏳ 正在启动远程控制…" : "⏳ 正在停止远程控制…")
+        : (isStart ? "⏳ Starting remote control…" : "⏳ Stopping remote control…");
+      await context.telegram.editMessageText(chatId, messageId, pendingText, { inline_keyboard: [] });
+      try {
+        await runAgyCommand(context.config.agy, subArgs, 15_000);
+      } catch { /* ignore – status page will show real state */ }
+      // Refresh the remote-control menu page to show updated status
+      await showMenu(context, chatId, messageId, "remote-control");
       return;
     }
     case "set":

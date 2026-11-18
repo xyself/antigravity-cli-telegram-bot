@@ -18,6 +18,8 @@ export type CallbackAction =
   | { kind: "update-bot" }
   | { kind: "new-session" }
   | { kind: "cancel" }
+  | { kind: "remote-start" }
+  | { kind: "remote-stop" }
   | { kind: "cli"; command: string }
   | { kind: "toggle"; option: string }
   | { kind: "set"; key: string; value: string };
@@ -55,6 +57,8 @@ export function parseCallbackAction(data: string): CallbackAction | null {
   if (data === "action:update_bot") return { kind: "update-bot" };
   if (data === "action:new") return { kind: "new-session" };
   if (data === "action:cancel") return { kind: "cancel" };
+  if (data === "action:remote-start") return { kind: "remote-start" };
+  if (data === "action:remote-stop") return { kind: "remote-stop" };
   if (data.startsWith("cli:")) return { kind: "cli", command: data.slice("cli:".length) };
   if (data.startsWith("toggle:")) return { kind: "toggle", option: data.slice("toggle:".length) };
   if (data.startsWith("set:")) {
@@ -83,6 +87,8 @@ export function serializeCallbackData(action: CallbackAction): string {
     case "update-bot": return "action:update_bot";
     case "new-session": return "action:new";
     case "cancel": return "action:cancel";
+    case "remote-start": return "action:remote-start";
+    case "remote-stop": return "action:remote-stop";
     case "cli": return `cli:${action.command}`;
     case "toggle": return `toggle:${action.option}`;
     case "set": return `set:${action.key}:${action.value}`;
