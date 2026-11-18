@@ -27,6 +27,7 @@ import { sessionInfoHtml, sessionOptionUsage, sessionText, usageReport } from ".
 import { cliOutput, formatChangelogSummary, showMain, showResumeMenu } from "../ui/screens.js";
 import { reply, replyWithHtml } from "../ui/reply.js";
 import { enqueueJob } from "../usecases/enqueue.js";
+import { checkCliCompat } from "../usecases/cli-compat-check.js";
 import { refreshModels, selectModel } from "../usecases/model-selection.js";
 import { persistDefaultSettings } from "../usecases/default-settings.js";
 import { runCustomAgy } from "../usecases/custom-agy.js";
@@ -550,6 +551,16 @@ command("/cli-help")(async ({ context, chatId }) => {
 command("/version")(async ({ context, chatId }) => {
   const output = await runAgyCommand(context.config.agy, ["--version"]).catch((error) => `Could not read AGY version: ${(error as Error).message}`);
   await reply(context, chatId, `AGY version: ${output}`, createMainKeyboard(settingsFor(context, chatId)));
+});
+
+command("/cli-check")(async ({ context, chatId }) => {
+  await reply(context, chatId, "正在检查 CLI 兼容性…", createMainKeyboard(settingsFor(context, chatId)));
+  try {
+    const result = await checkCliCompat(context.config.agy, context.config.stateFile);
+    await reply(context, chatId, result.report, createMainKeyboard(settingsFor(context, chatId)));
+  } catch (error) {
+    await reply(context, chatId, `CLI 兼容检查失败：${(error as Error).message}`, createMainKeyboard(settingsFor(context, chatId)));
+  }
 });
 
 command("/session")(async ({ context, chatId }) => {

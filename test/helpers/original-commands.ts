@@ -7,11 +7,12 @@ export const ORIGINAL_COMMANDS: string[] = [
   "/update", "/update_bot", "/update-bot", "/upgrade", "/restart", "/restart_bot", "/restart-bot", "/reboot",
   "/models", "/model", "/effort", "/mode", "/sandbox", "/verbose", "/agent", "/project", "/add-dir",
   "/output-format", "/json-schema", "/log-file", "/print-timeout", "/resume", "/sessions", "/continue",
-  "/new-project", "/disable-slash-commands", "/agents", "/changelog", "/plugins", "/skills", "/mcp", "/cli-help", "/version",
+  "/new-project", "/disable-slash-commands", "/agents", "/changelog", "/plugins", "/skills", "/mcp", "/cli-help", "/cli-check", "/version",
   "/session", "/usage", "/quota", "/credits", "/context", "/tokens", "/status", "/cancel", "/kill", "/stop",
   "/learn", "/compact", "/agy-confirm", "/workspace", "/stt", "/tts", "/diff", "/title", "/rename",
   "/autotopic", "/auto_topic", "/autotopicrename",
   "/btw", "/fork", "/branch", "/rewind", "/undo",
+  "/rc", "/remote-control", "/remote_control",
   "/backup", "/backup_chats", "/export_conversations",
 ];
 

@@ -261,6 +261,7 @@ system prefix.
 | `/plugins` | List imported AGY plugins. |
 | `/cli-help` | Show the installed `agy --help` output. |
 | `/version` | Show the installed AGY CLI version. |
+| `/cli-check` | Check the installed AGY CLI against the bot (version, flags, effort/mode values, models) and report drift. |
 | `/agy ARGS...` | Run any non-interactive AGY command or subcommand using direct argv. |
 | `/agy-confirm` | Confirm a pending plugin, update, install, or permission-changing command. |
 | `/project ID\|clear` | Set or clear the per-chat `--project` value. |

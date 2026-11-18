@@ -80,8 +80,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   };
 }
 
-export function isMode(value: string): value is "plan" | "accept-edits" { return value === "plan" || value === "accept-edits"; }
-export function isEffort(value: string): value is "low" | "medium" | "high" { return value === "low" || value === "medium" || value === "high"; }
+export const MODE_VALUES = ["plan", "accept-edits"] as const;
+export const EFFORT_VALUES = ["low", "medium", "high"] as const;
+export function isMode(value: string): value is (typeof MODE_VALUES)[number] { return (MODE_VALUES as readonly string[]).includes(value); }
+export function isEffort(value: string): value is (typeof EFFORT_VALUES)[number] { return (EFFORT_VALUES as readonly string[]).includes(value); }
 export function isVerbose(value: string): value is "silent" | "compact" | "detailed" { return value === "silent" || value === "compact" || value === "detailed"; }
 export function isMenuProfile(value: string): value is import("./types.js").MenuProfile {
   return value === "daily" || value === "dev" || value === "mixed";

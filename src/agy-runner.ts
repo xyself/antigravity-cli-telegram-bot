@@ -6,6 +6,11 @@ import type { AgyConfig, AgyResult, RunnerOptions, StreamEvent, Usage } from "./
 
 const CONVERSATION_KEYS = new Set(["conversationId", "conversation_id", "conversationID", "sessionId", "session_id"]);
 
+// Appended to every prompt sent to AGY. The Telegram bot running this
+// session must never be modified, reinstalled, or restarted by the agent
+// itself: a restart kills this session and the bot re-runs the same prompt.
+export const SELF_PROTECTION_NOTICE = "[Self-protection: do NOT modify, reinstall, or restart the Telegram bot running this session (~/antigravity-cli-telegram-bot, /usr/local/lib/node_modules/agy-telegram). Never run 'npm install -g' for it or 'systemctl restart/stop agy-telegram'. Only change /etc/agy-telegram.env variables the user explicitly named, and never restart the service afterwards - report that a manual restart is needed.]";
+
 export function buildArgs(config: AgyConfig, prompt: string, conversationId: string | null, overrides: RunnerOptions = {}): string[] {
   const effective = { ...config, ...overrides };
   const outputFormat = effective.outputFormat || "stream-json";
@@ -57,7 +62,7 @@ export function buildArgs(config: AgyConfig, prompt: string, conversationId: str
   // Self-protection: the Telegram bot running this session must never be
   // modified, reinstalled, or restarted by the agent itself. A restart kills
   // this session and the bot re-runs the same prompt, looping forever.
-  finalPrompt += "\n\n[Self-protection: do NOT modify, reinstall, or restart the Telegram bot running this session (~/antigravity-cli-telegram-bot, /usr/local/lib/node_modules/agy-telegram). Never run 'npm install -g' for it or 'systemctl restart/stop agy-telegram'. Only change /etc/agy-telegram.env variables the user explicitly named, and never restart the service afterwards - report that a manual restart is needed.]";
+  finalPrompt += `\n\n${SELF_PROTECTION_NOTICE}`;
   // Use idleTimeoutMs (if set) as the agy-visible print timeout so the process
   // gracefully stops itself before the bot's idleTimer fires a SIGTERM.  Fall
   // back to the full wall-clock timeoutMs when no idle window is configured.
