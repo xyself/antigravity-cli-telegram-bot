@@ -27,6 +27,20 @@ test("handleBackupCommand packages agy data and sends document file", async () =
   const harness = createHarness();
   const context = asAppContext(harness);
   const chatId = 123456;
+  const geminiRoot = resolveGeminiRootDir();
+  const agyDir = `${geminiRoot}/antigravity-cli`;
+  const sampleHistory = `${agyDir}/history.jsonl`;
+  const sampleMcp = `${geminiRoot}/config/mcp_config.json`;
+  const createdHistory = !fs.existsSync(sampleHistory);
+  const createdMcp = !fs.existsSync(sampleMcp);
+  if (createdHistory) {
+    fs.mkdirSync(agyDir, { recursive: true });
+    fs.writeFileSync(sampleHistory, '{"cmd":"test"}\n');
+  }
+  if (createdMcp) {
+    fs.mkdirSync(`${geminiRoot}/config`, { recursive: true });
+    fs.writeFileSync(sampleMcp, '{"mcpServers":{}}');
+  }
 
   try {
     await handleBackupCommand(context, chatId);
@@ -47,6 +61,8 @@ test("handleBackupCommand packages agy data and sends document file", async () =
     const filePath = String(docPayload.file_path);
     assert.equal(fs.existsSync(filePath), false, "Temporary archive file must be unlinked");
   } finally {
+    if (createdHistory) fs.rmSync(sampleHistory, { force: true });
+    if (createdMcp) fs.rmSync(sampleMcp, { force: true });
     harness.cleanup();
   }
 });

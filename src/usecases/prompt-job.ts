@@ -10,14 +10,16 @@ import { escapeHtml, findReferencedMediaFiles, formatTelegramHtml } from "../tel
 import { formatStepUpdate, runAgy } from "../agy-runner.js";
 import { parseContext, parseContextMetrics, parseCredits, parseUsageQuota, parseTokenValue, runPtyCommand } from "../pty-runner.js";
 import { isZh, settingsFor } from "../domain/settings.js";
+import { resolveLang } from "../i18n/index.js";
 import { addUsage, formatTokenCount } from "../domain/usage-math.js";
 import { buildTelemetryQuoteBlock } from "../domain/telemetry.js";
 import { reply, replyWithFormattedResponse, replyWithHtml, type SentMessage } from "../ui/reply.js";
 import { usageText } from "../ui/messages.js";
-import { contextActionsKeyboard } from "../ui/inline-keyboards.js";
+import { contextActionsKeyboard, inFlightProgressKeyboard, postTurnActionKeyboard } from "../ui/inline-keyboards.js";
 import { refreshActiveMenu } from "../ui/screens.js";
 import { runCompactionJob } from "./compaction.js";
 import { runBtwJob } from "./btw-command.js";
+import { formatWorkspaceGitSummaryHtml, getWorkspaceGitSummary } from "./git-actions.js";
 import { clearSentImagePaths, detectAndSendGeneratedImages } from "./image-detection.js";
 import { parseChatTarget } from "../telegram/client.js";
 import { createTtsService } from "../tts/tts-service.js";
@@ -123,18 +125,23 @@ async function runPtyReportJob(context: AppContext, job: QueueJob & { kind: PtyR
 }
 
 export async function runPromptJob(context: AppContext, job: QueueJob, isCancelled: () => boolean): Promise<void> {
+  if (job.kind === "btw") {
+    const btwController = new AbortController();
+    context.controllers.set(controllerKey("btw", job.chatId), btwController);
+    try {
+      await runBtwJob(context, job, btwController, isCancelled);
+    } finally {
+      context.controllers.delete(controllerKey("btw", job.chatId));
+    }
+    return;
+  }
+
   const controller = new AbortController();
   context.controllers.set(controllerKey("prompt", job.chatId), controller);
   let progressMessage: { message_id: number } | null = null;
 
   if (job.kind === "compact") {
     await runCompactionJob(context, job, controller, isCancelled);
-    context.controllers.delete(controllerKey("prompt", job.chatId));
-    return;
-  }
-
-  if (job.kind === "btw") {
-    await runBtwJob(context, job, controller, isCancelled);
     context.controllers.delete(controllerKey("prompt", job.chatId));
     return;
   }
@@ -164,13 +171,15 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
     }, 4000);
     const session = context.state.session(job.chatId);
     const settings = settingsFor(context, job.chatId);
-    const zh = isZh(settings, context, job.chatId);
+    const lang = resolveLang(settings, context, job.chatId);
+    const zh = lang === "zh";
+    const progressKb = inFlightProgressKeyboard(lang);
     const isCustomWorkspace = Boolean(settings.workspace);
     wsNotice = isCustomWorkspace ? `📁 <b>Workspace:</b> <code>${escapeHtml(settings.workspace!)}</code>\n` : "";
     progressMessage = await context.telegram.sendMessage(
       job.chatId,
       zh ? `${wsNotice}⏳ AGY 正在启动... (${modelLabel(settings.model)})` : `${wsNotice}⏳ AGY is starting... (${modelLabel(settings.model)})`,
-      undefined,
+      progressKb,
       "HTML"
     );
     void context.telegram.sendChatAction(job.chatId).catch(() => undefined);
@@ -215,7 +224,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
       lastProgressAt = Date.now();
 
       try {
-        await context.telegram.editMessageText(job.chatId, progressMessage.message_id, content, undefined, "HTML");
+        await context.telegram.editMessageText(job.chatId, progressMessage.message_id, content, progressKb, "HTML");
         lastEditedText = content;
         if (minProgressIntervalMs > 4500) {
           minProgressIntervalMs = Math.max(4500, minProgressIntervalMs - 1000);
@@ -288,7 +297,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
 
       const stepsDisplay = recentSteps.map((s, idx) => {
         const isLatest = idx === recentSteps.length - 1;
-        return `${isLatest ? "➜" : "✓"} ${s}`;
+        return `${isLatest ? "⏳" : "✅"} ${s}`;
       });
       let body: string;
       if (stepsDisplay.length) {
@@ -301,8 +310,8 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
         body = zh ? "\n\n🚀 正在启动 AGY 会话..." : "\n\n🚀 Starting AGY session...";
       }
       pendingEditContent = zh
-        ? `${wsNotice}⏳ AGY 正在处理... (${elapsed}秒 · ${modelLabel(settings.model)})${body}`
-        : `${wsNotice}⏳ AGY is working... (${elapsed}s · ${modelLabel(settings.model)})${body}`;
+        ? `${wsNotice}⚡ AGY 执行中 · ⏱️ ${elapsed}秒 · ${modelLabel(settings.model)}${body}`
+        : `${wsNotice}⚡ AGY working · ⏱️ ${elapsed}s · ${modelLabel(settings.model)}${body}`;
 
       void flushProgress();
     };
@@ -339,6 +348,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
         mediaPath: job.mediaPath,
         mediaPaths: job.mediaPaths,
         mediaType: job.mediaType,
+        resumeCount: job.resumeCount ?? 0,
         startedAt: Date.now(),
       });
       result = await runAgy(effectiveAgyConfig, job.prompt || "", session?.conversationId || null, {
@@ -605,6 +615,10 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
     const shouldSendText = ttsMode !== "voice-only" || !shouldSendVoice;
 
     if (shouldSendText) {
+      const gitSummary = await getWorkspaceGitSummary(effectiveWorkspace).catch(() => null);
+      const hasGitChanges = Boolean(gitSummary && gitSummary.totalChanged > 0);
+      const gitSummaryHtml = gitSummary && hasGitChanges ? formatWorkspaceGitSummaryHtml(gitSummary, lang) : "";
+
       const isSeparateTelemetry = (telemetryMode === "message" || telemetryMode === "separate") && Boolean(result.text);
       const keyboardNeeded = !isSeparateTelemetry;
       const sentMessages = await replyWithFormattedResponse(
@@ -634,11 +648,20 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           model: result.model || settings.model || "",
           isZh: zh,
         });
-        await replyWithFormattedResponse(
+        const smartBar = postTurnActionKeyboard({
+          mode: settings.mode,
+          hasGitChanges,
+          contextPct: resolved.pct,
+          toolCalls: result.toolCalls,
+          lang,
+        });
+        const telemetryHtml = formatTelegramHtml(telemetryBlock);
+        const combinedHtml = gitSummaryHtml ? `${telemetryHtml}\n\n${gitSummaryHtml}` : telemetryHtml;
+        await replyWithHtml(
           context,
           job.chatId,
-          telemetryBlock,
-          createMainKeyboard(settingsFor(context, job.chatId))
+          combinedHtml,
+          smartBar ?? createMainKeyboard(settingsFor(context, job.chatId))
         );
       } else if (telemetryMode === "inline" && result.text && sentMessages.length > 0) {
         const lastMsg = sentMessages[sentMessages.length - 1];
@@ -661,22 +684,45 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           model: result.model || settings.model || "",
           isZh: zh,
         });
+        const smartBar = postTurnActionKeyboard({
+          mode: settings.mode,
+          hasGitChanges,
+          contextPct: resolved.pct,
+          toolCalls: result.toolCalls,
+          lang,
+        });
         const quoteHtml = formatTelegramHtml(telemetryBlock);
+        const extraHtml = gitSummaryHtml ? `${quoteHtml}\n\n${gitSummaryHtml}` : quoteHtml;
         const updatedText = lastMsg.parseMode === "HTML"
-          ? `${lastMsg.text}\n\n${quoteHtml}`
+          ? `${lastMsg.text}\n\n${extraHtml}`
           : `${lastMsg.text}\n\n${telemetryBlock}`;
         if (updatedText.length <= (context.config.telegram.maxMessageChars || 3900)) {
           await context.telegram.editMessageText(
             job.chatId,
             lastMsg.message_id,
             updatedText,
-            undefined,
+            smartBar ?? undefined,
             lastMsg.parseMode
           ).catch((editErr) => {
             console.debug(`[Telemetry] In-place edit failed: ${(editErr as Error).message}`);
           });
         } else {
-          await replyWithFormattedResponse(context, job.chatId, telemetryBlock);
+          await replyWithHtml(context, job.chatId, extraHtml, smartBar ?? undefined);
+        }
+      } else {
+        const resolved = getResolvedActiveMetrics();
+        const smartBar = postTurnActionKeyboard({
+          mode: settings.mode,
+          hasGitChanges,
+          contextPct: resolved.pct,
+          toolCalls: result.toolCalls,
+          lang,
+        });
+        if (gitSummaryHtml) {
+          await replyWithHtml(context, job.chatId, gitSummaryHtml, smartBar ?? undefined);
+        } else if (smartBar && sentMessages.length > 0) {
+          const lastMsg = sentMessages[sentMessages.length - 1];
+          await context.telegram.editMessageReplyMarkup(job.chatId, lastMsg.message_id, smartBar).catch(() => undefined);
         }
       }
     }

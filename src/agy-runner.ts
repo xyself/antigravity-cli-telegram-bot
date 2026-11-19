@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { getDiscoveredSubcommands } from "./cli-capabilities.js";
 import { childEnvironment } from "./infra/safe-env.js";
 import type { AgyConfig, AgyResult, RunnerOptions, StreamEvent, Usage } from "./types.js";
 
@@ -54,6 +55,10 @@ export function buildArgs(config: AgyConfig, prompt: string, conversationId: str
       finalPrompt = `Please analyze the attached files:\n\n${attachmentBlock}`;
     }
   }
+  // Self-protection: the Telegram bot running this session must never be
+  // modified, reinstalled, or restarted by the agent itself. A restart kills
+  // this session and the bot re-runs the same prompt, looping forever.
+  finalPrompt += "\n\n[Self-protection: do NOT modify, reinstall, or restart the Telegram bot running this session (~/antigravity-cli-telegram-bot, /usr/local/lib/node_modules/agy-telegram). Never run 'npm install -g' for it or 'systemctl restart/stop agy-telegram'. Only change /etc/agy-telegram.env variables the user explicitly named, and never restart the service afterwards - report that a manual restart is needed.]";
   // Use idleTimeoutMs (if set) as the agy-visible print timeout so the process
   // gracefully stops itself before the bot's idleTimer fires a SIGTERM.  Fall
   // back to the full wall-clock timeoutMs when no idle window is configured.
@@ -65,7 +70,7 @@ export function buildArgs(config: AgyConfig, prompt: string, conversationId: str
   if (effective.mode) args.push("--mode", effective.mode);
   if (effective.model) {
     args.push("--model", effective.model);
-    const modelHasEffort = /-(low|medium|high)$/i.test(effective.model);
+    const modelHasEffort = /-(low|medium|high|xhigh|max)$/i.test(effective.model);
     const isClaude = /claude/i.test(effective.model);
     if (!modelHasEffort && !isClaude && effective.effort) {
       args.push("--effort", effective.effort);
@@ -133,13 +138,13 @@ export function parseCommandArgs(input: string): string[] {
   return args;
 }
 
-export const TOP_LEVEL_COMMANDS = new Set(["agent", "agents", "changelog", "help", "install", "mcp", "mic-serve", "models", "plugin", "plugins", "update"]);
+export const TOP_LEVEL_COMMANDS = new Set(["agent", "agents", "changelog", "help", "install", "mcp", "mic-serve", "models", "plugin", "plugins", "remote-control", "update"]);
 
 export function validateCustomArgs(args: string[]): string | null {
   if (args.length === 0) return "Usage: /agy <agy arguments>. Example: /agy --print \"Explain this project\" --output-format text";
   if (args.includes("--prompt-interactive") || args.includes("-i")) return "--prompt-interactive requires a local TTY and is not available through Telegram. Use /agy --print \"your prompt\" instead.";
   const first = args[0];
-  if (first && TOP_LEVEL_COMMANDS.has(first)) return null;
+  if (first && (TOP_LEVEL_COMMANDS.has(first) || getDiscoveredSubcommands().includes(first))) return null;
   if (["--help", "-h", "--version", "-v"].includes(first || "")) return null;
   if (!args.includes("--print") && !args.includes("-p") && !args.includes("--prompt")) {
     if (first && !first.startsWith("-")) return null;

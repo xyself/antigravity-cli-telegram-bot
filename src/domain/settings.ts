@@ -1,12 +1,16 @@
 import { isEffort, isMode, isVerbose, isMenuProfile } from "../config.js";
-import { getActiveModels } from "../models.js";
+import { getActiveModels, getModelFamilies } from "../models.js";
 import type { AppContext } from "../context.js";
 import type { ChatId, SessionSettings } from "../types.js";
 
 export type SettingsOutputFormat = NonNullable<SessionSettings["outputFormat"]>;
 
 export function isModelAllowed(context: Pick<AppContext, "config">, modelId: string): boolean {
-  return getActiveModels().some((model) => model.id === modelId) || context.config.agy.allowedModels.includes(modelId);
+  return (
+    getActiveModels().some((model) => model.id === modelId) ||
+    getModelFamilies().some((family) => family.baseId === modelId) ||
+    context.config.agy.allowedModels.includes(modelId)
+  );
 }
 
 export function settingsFor(context: AppContext, chatId: ChatId): SessionSettings {

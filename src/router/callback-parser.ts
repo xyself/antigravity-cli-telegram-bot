@@ -18,11 +18,21 @@ export type CallbackAction =
   | { kind: "update-bot" }
   | { kind: "new-session" }
   | { kind: "cancel" }
+  | { kind: "backup" }
+  | { kind: "learn-now" }
+  | { kind: "diff" }
+  | { kind: "approve-plan" }
+  | { kind: "btw-inline" }
+  | { kind: "git-commit" }
+  | { kind: "git-revert-ask" }
+  | { kind: "git-revert-confirm" }
   | { kind: "remote-start" }
   | { kind: "remote-stop" }
   | { kind: "cli"; command: string }
   | { kind: "toggle"; option: string }
-  | { kind: "set"; key: string; value: string };
+  | { kind: "set"; key: string; value: string }
+  | { kind: "input-clear"; target: string }
+  | { kind: "input-cancel" };
 
 const RESUME_PAGE_PREFIX = "resume:page:";
 const RESUME_USE_PREFIX = "resume:use:";
@@ -32,7 +42,6 @@ export function parseCallbackAction(data: string): CallbackAction | null {
   if (data.startsWith("menu:")) {
     const rest = data.slice("menu:".length);
     const parts = rest.split(":");
-    // Check if the last part is a numeric page index
     const lastPart = parts[parts.length - 1];
     if (parts.length > 1 && /^\d+$/.test(lastPart)) {
       const page = Number(lastPart);
@@ -57,8 +66,18 @@ export function parseCallbackAction(data: string): CallbackAction | null {
   if (data === "action:update_bot") return { kind: "update-bot" };
   if (data === "action:new") return { kind: "new-session" };
   if (data === "action:cancel") return { kind: "cancel" };
+  if (data === "action:backup") return { kind: "backup" };
+  if (data === "action:learn-now") return { kind: "learn-now" };
+  if (data === "action:diff") return { kind: "diff" };
+  if (data === "action:approve-plan") return { kind: "approve-plan" };
+  if (data === "action:btw-inline") return { kind: "btw-inline" };
+  if (data === "action:git-commit") return { kind: "git-commit" };
+  if (data === "action:git-revert-ask") return { kind: "git-revert-ask" };
+  if (data === "action:git-revert-confirm") return { kind: "git-revert-confirm" };
   if (data === "action:remote-start") return { kind: "remote-start" };
   if (data === "action:remote-stop") return { kind: "remote-stop" };
+  if (data === "input:cancel") return { kind: "input-cancel" };
+  if (data.startsWith("input:clear:")) return { kind: "input-clear", target: data.slice("input:clear:".length) };
   if (data.startsWith("cli:")) return { kind: "cli", command: data.slice("cli:".length) };
   if (data.startsWith("toggle:")) return { kind: "toggle", option: data.slice("toggle:".length) };
   if (data.startsWith("set:")) {
@@ -87,8 +106,18 @@ export function serializeCallbackData(action: CallbackAction): string {
     case "update-bot": return "action:update_bot";
     case "new-session": return "action:new";
     case "cancel": return "action:cancel";
+    case "backup": return "action:backup";
+    case "learn-now": return "action:learn-now";
+    case "diff": return "action:diff";
+    case "approve-plan": return "action:approve-plan";
+    case "btw-inline": return "action:btw-inline";
+    case "git-commit": return "action:git-commit";
+    case "git-revert-ask": return "action:git-revert-ask";
+    case "git-revert-confirm": return "action:git-revert-confirm";
     case "remote-start": return "action:remote-start";
     case "remote-stop": return "action:remote-stop";
+    case "input-cancel": return "input:cancel";
+    case "input-clear": return `input:clear:${action.target}`;
     case "cli": return `cli:${action.command}`;
     case "toggle": return `toggle:${action.option}`;
     case "set": return `set:${action.key}:${action.value}`;

@@ -235,7 +235,7 @@ test("TC-TEL-08: explicit contextPercentage and session totals from Proposition 
   assert.match(block, /• \*\*Context growth:\*\* \+2,705 tokens \(feeds active context\)/);
   assert.match(block, /• \*\*Thinking tokens:\*\* 1,200 tokens — Balanced reasoning/);
   assert.match(block, /• \*\*Tool calls:\*\* 4 executions — Nominal \(verified on server\)/);
-  assert.match(block, /• \*\*Model & duration:\*\* gemini-3\.8-flash · 2\.5s/);
+  assert.match(block, /• \*\*Model & duration:\*\* Gemini 3\.8 Flash · 2\.5s/);
   assert.match(block, /📊 \*\*Session totals\*\*/);
   assert.match(block, /• \*\*Active context:\*\* 146,300 \/ 1,000,000 tokens \(14%\) — Nominal/);
   assert.match(block, /• \*\*Cumulative usage:\*\* 320k tokens consumed · 12 turns · 1m 33s total/);
@@ -276,7 +276,7 @@ test("TC-TEL-11: run duration vs session duration isolation", () => {
   const block = buildTelemetryQuoteBlock(data);
   // Header and This turn must report run duration (4.9s), NOT session duration (120s)
   assert.match(block, /\*\*>\s*⚡ Run: \+15k ctx · 2 tools · 4\.9s · 6% ctx/);
-  assert.match(block, /• \*\*Model & duration:\*\* gemini-3\.8-flash · 4\.9s/);
+  assert.match(block, /• \*\*Model & duration:\*\* Gemini 3\.8 Flash · 4\.9s/);
   // Session totals reports cumulative duration (2m 0s total)
   assert.match(block, /• \*\*Cumulative usage:\*\* 171k tokens consumed · 3 turns · 2m 0s total/);
 });

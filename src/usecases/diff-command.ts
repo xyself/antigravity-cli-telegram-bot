@@ -5,10 +5,12 @@ import { promisify } from "node:util";
 import type { AppContext } from "../context.js";
 import { settingsFor } from "../domain/settings.js";
 import { isWithin } from "../domain/workspace.js";
+import { resolveLang } from "../i18n/index.js";
 import { createMainKeyboard } from "../keyboards.js";
 import { escapeHtml } from "../telegram.js";
 import type { ChatId } from "../types.js";
 import { reply, replyWithHtml } from "../ui/reply.js";
+import { gitDiffActionsKeyboard } from "./git-actions.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,6 +43,7 @@ export async function runGitCommand(args: string[], cwd: string): Promise<GitExe
 
 export async function handleDiffCommand(context: AppContext, chatId: ChatId): Promise<void> {
   const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
   const effectiveWorkspace = settings.workspace || context.config.agy.workspace;
 
   if (!fs.existsSync(effectiveWorkspace)) {
@@ -103,7 +106,7 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
       context,
       chatId,
       `ℹ️ No modified tracked files in active workspace (untracked files detected):\n<code>${escapeHtml(realWorkspace)}</code>\n\n<pre>${escapeHtml(statusRes.stdout)}</pre>`,
-      createMainKeyboard(settings)
+      gitDiffActionsKeyboard(lang, true)
     );
     return;
   }
@@ -113,7 +116,7 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
       context,
       chatId,
       `📁 <b>Git diff:</b> <code>${escapeHtml(realWorkspace)}</code>\n\n<pre><code class="language-diff">${escapeHtml(diff)}</code></pre>`,
-      createMainKeyboard(settings)
+      gitDiffActionsKeyboard(lang, true)
     );
     return;
   }
@@ -133,7 +136,8 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
     await replyWithHtml(
       context,
       chatId,
-      `📊 <b>Git diff summary:</b> <code>${escapeHtml(realWorkspace)}</code>\n\n<pre>${escapeHtml(statOutput)}</pre>\n\n📄 <i>Full patch attached below.</i>`
+      `📊 <b>Git diff summary:</b> <code>${escapeHtml(realWorkspace)}</code>\n\n<pre>${escapeHtml(statOutput)}</pre>\n\n📄 <i>Full patch attached below.</i>`,
+      gitDiffActionsKeyboard(lang, true)
     );
     await context.telegram.sendDocumentFile(
       chatId,

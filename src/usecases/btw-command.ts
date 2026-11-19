@@ -67,9 +67,12 @@ export async function runBtwJob(
       context.telegram.sendChatAction(job.chatId, "typing").catch(() => undefined);
     }, 4000);
 
+    const zh = isZh(settings, context, job.chatId);
     progressMessage = await context.telegram.sendMessage(
       job.chatId,
-      `💬 <b>Side question (/btw):</b> thinking... (${escapeHtml(modelLabel(settings.model))})`,
+      zh
+        ? `💬 <b>旁支提问 (/btw)：</b>正在独立并发通道思考... (${escapeHtml(modelLabel(settings.model))})`
+        : `💬 <b>Side question (/btw):</b> thinking on parallel channel... (${escapeHtml(modelLabel(settings.model))})`,
       undefined,
       "HTML"
     );
@@ -94,7 +97,9 @@ export async function runBtwJob(
           void context.telegram.editMessageText(
             job.chatId,
             progressMessage.message_id,
-            `💬 <b>Side question (/btw):</b> ${escapeHtml(stepDesc)}`,
+            zh
+              ? `💬 <b>旁支提问 (/btw)：</b>${escapeHtml(stepDesc)}`
+              : `💬 <b>Side question (/btw):</b> ${escapeHtml(stepDesc)}`,
             undefined,
             "HTML"
           ).catch(() => undefined);
@@ -118,7 +123,6 @@ export async function runBtwJob(
       await context.telegram.deleteMessage(job.chatId, progressMessage.message_id).catch(() => undefined);
     }
 
-    const zh = isZh(settings, context, job.chatId);
     const answerBody = (result.text || "").trim() || (zh ? "(未返回任何内容)" : "(No output returned)");
     const formattedOutput = zh
       ? `**💬 旁支提问 (/btw)** *(主会话未受影响)*\n\n${answerBody}`

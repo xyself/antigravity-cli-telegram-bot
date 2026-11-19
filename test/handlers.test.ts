@@ -34,14 +34,16 @@ test("auth: privateOnly + user/chat allowlist matrix", () => {
   }
 });
 
-test("/start and /menu render the main panel with exact copy", async () => {
+test("/start and /menu render the main panel with live status dashboard", async () => {
   const harness = createHarness();
   const ctx = asAppContext(harness);
   try {
     await handleCommand(ctx, textUpdate(777, "").message!, "/start", []);
     const texts = harness.telegram.sentTexts();
     assert.equal(texts.length, 1);
-    assert.equal(texts[0], "⚙️ AGY Control Panel");
+    assert.match(texts[0], /^⚙️ <b>AGY Control Panel<\/b>/);
+    assert.match(texts[0], /• <b>Model:<\/b> <code>AGY default<\/code> · <code>high<\/code>/);
+    assert.match(texts[0], /• <b>Mode:<\/b> <code>plan<\/code> · <b>Sandbox:<\/b> <code>Off<\/code>/);
     assert.equal(harness.telegram.lastPayload("sendMessage")?.text, texts[0]);
   } finally {
     harness.cleanup();
@@ -84,7 +86,7 @@ test("settings commands persist values and reply with exact copy", async () => {
     assert.equal(harness.telegram.sentTexts().at(-1), "Invalid effort: ultra. Choose: low, medium, high.");
 
     await handleCommand(ctx, textUpdate(777, "").message!, "/mode", []);
-    assert.equal(harness.telegram.sentTexts().at(-1), "Select execution mode:");
+    assert.match(String(harness.telegram.sentTexts().at(-1)), /<b>⚙️ Select Execution Mode<\/b>/);
 
     await handleCommand(ctx, textUpdate(777, "").message!, "/agent", ["clear"]);
     assert.equal(ctx.state.session(777)?.settings?.agent, null);
@@ -199,18 +201,18 @@ test("callbacks: set:model persists model+effort and offers permanent default", 
   const harness = createHarness();
   const ctx = asAppContext(harness);
   try {
-    await handleCallback(ctx, callbackUpdate("set:model:gemini-3.7-flash-medium"));
+    await handleCallback(ctx, callbackUpdate("set:model:gemini-3.8-flash-medium"));
     const settings = ctx.state.session(777)?.settings;
-    assert.equal(settings?.model, "gemini-3.7-flash-medium");
+    assert.equal(settings?.model, "gemini-3.8-flash-medium");
     assert.equal(settings?.effort, "medium");
     const edit = harness.telegram.lastPayload("editMessageText");
-    assert.equal(edit?.text, "Model set to <b>Gemini 3.7 Flash (Medium)</b>.\n\nWould you like to set this as your permanent default?");
+    assert.equal(edit?.text, "Model set to <b>Gemini 3.8 Flash (Medium)</b>.\n\nWould you like to set this as your permanent default?");
     assert.deepEqual(JSON.parse(JSON.stringify((edit?.reply_markup as { inline_keyboard: string[][] }).inline_keyboard)), [
       [{ text: "⭐ Yes, set as Default", callback_data: "action:setdefault" }, { text: "👌 Only this session", callback_data: "menu:main" }],
     ]);
 
     await handleCallback(ctx, callbackUpdate("set:model:not-a-real-model", 777, 43));
-    assert.equal(String(harness.telegram.editedTexts().at(-1)), "⚙️ AGY Control Panel");
+    assert.match(String(harness.telegram.editedTexts().at(-1)), /^⚙️ <b>AGY Control Panel<\/b>/);
   } finally {
     harness.cleanup();
   }
@@ -246,10 +248,10 @@ test("callbacks: toggle, action:new, action:cancel, resume validation, menu rout
     assert.equal(harness.telegram.editedTexts().at(-1), "Selected conversation was not found or is invalid.");
 
     await handleCallback(ctx, callbackUpdate("menu:models"));
-    assert.equal(harness.telegram.editedTexts().at(-1), "Select a model:");
+    assert.match(String(harness.telegram.editedTexts().at(-1)), /<b>🤖 Select AI Model<\/b>/);
 
     await handleCallback(ctx, callbackUpdate("menu:sandbox"));
-    assert.equal(harness.telegram.editedTexts().at(-1), "Sandbox is disabled.");
+    assert.match(String(harness.telegram.editedTexts().at(-1)), /<b>🛡️ Terminal Sandbox<\/b>[\s\S]*Current status: <b>disabled<\/b>/);
 
     await handleCallback(ctx, callbackUpdate("set:verbose:silent"));
     assert.equal(ctx.state.session(777)?.settings?.verbose, "silent");
@@ -257,7 +259,7 @@ test("callbacks: toggle, action:new, action:cancel, resume validation, menu rout
 
     await handleCallback(ctx, callbackUpdate("set:output:text"));
     assert.equal(ctx.state.session(777)?.settings?.outputFormat, "text");
-    assert.equal(harness.telegram.editedTexts().at(-1), "Output format updated.");
+    assert.equal(harness.telegram.editedTexts().at(-1), "Output format updated to text.");
   } finally {
     harness.cleanup();
   }
@@ -275,7 +277,8 @@ test("callbacks: cli:update routes to the dangerous-command confirmation flow", 
     assert.match(String(harness.telegram.editedTexts().at(-1)), /^Running agy --version\.\.\./);
 
     await handleCallback(ctx, callbackUpdate("cli:add-dir"));
-    assert.match(String(harness.telegram.editedTexts().at(-1)), /^Use this custom command:\n\n\/agy --add-dir \/path/);
+    assert.match(String(harness.telegram.editedTexts().at(-1)), /<b>Add Workspace Directory \(--add-dir\)<\/b>/);
+    assert.equal(ctx.state.session(777)?.pendingInput?.kind, "add-dir");
   } finally {
     harness.cleanup();
   }
@@ -651,7 +654,7 @@ test("/help streams CLI help through a fresh loading message", async () => {
   try {
     await handleCommand(ctx, textUpdate(777, "").message!, "/help", []);
     const texts = harness.telegram.sentTexts();
-    assert.equal(texts[0], "⚙️ AGY Control Panel");
+    assert.match(texts[0], /^⚙️ <b>AGY Control Panel<\/b>/);
     assert.equal(texts[1], "Loading AGY CLI help...");
     assert.equal(harness.telegram.editedTexts().at(-1), "Running agy --help...");
   } finally {

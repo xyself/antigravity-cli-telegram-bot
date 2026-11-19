@@ -1,18 +1,33 @@
-import { formatRelativeTime } from "../db.js";
 import type { AppContext } from "../context.js";
 import { runAgyCommand } from "../agy-runner.js";
+import { refreshCliCapabilities } from "../cli-capabilities.js";
+import { settingsFor } from "../domain/settings.js";
+import { resolveLang, t } from "../i18n/index.js";
 import { createMainKeyboard } from "../keyboards.js";
+import { escapeHtml } from "../telegram.js";
+import type { ChatId, InlineKeyboardMarkup, PendingInputKind } from "../types.js";
+import { formatEnvDoctorHtml, inspectEnvironment } from "../infra/env-doctor.js";
+import { enqueueJob } from "../usecases/enqueue.js";
+import { handleMcpCommand } from "../usecases/mcp-command.js";
+import { refreshModels } from "../usecases/model-selection.js";
+import { handleSkillsCommand } from "../usecases/skills-command.js";
 import {
   backKeyboard,
+  button,
   cliOptionsKeyboard,
   cliToolsKeyboard,
+  directivesKeyboard,
   effortKeyboard,
+  guideKeyboard,
   mainInlineKeyboard,
+  mcpKeyboard,
   menuProfileKeyboard,
   modeKeyboard,
   modeSandboxKeyboard,
   modelKeyboard,
   outputFormatKeyboard,
+  pendingInputKeyboard,
+  pluginsKeyboard,
   remoteControlKeyboard,
   resumeKeyboard,
   sandboxKeyboard,
@@ -23,39 +38,31 @@ import {
   ttsKeyboard,
   ttsModeKeyboard,
   ttsVoiceKeyboard,
-  button,
   verboseKeyboard,
   voiceSettingsKeyboard,
   workspaceKeyboard,
 } from "./inline-keyboards.js";
-import { resumeMessageText, sessionText, settingsText } from "./messages.js";
+import { controlPanelHtml, resumeMessageText, sessionText } from "./messages.js";
 import { reply, replyWithHtml } from "./reply.js";
-import { enqueueJob } from "../usecases/enqueue.js";
-import { refreshModels } from "../usecases/model-selection.js";
-import { handleSkillsCommand } from "../usecases/skills-command.js";
-import { handleMcpCommand } from "../usecases/mcp-command.js";
-import { isZh, settingsFor } from "../domain/settings.js";
-import type { ChatId, InlineKeyboardMarkup } from "../types.js";
 
 export function showMain(context: AppContext, chatId: ChatId, messageId?: number): Promise<void> {
   return showMainInternal(context, chatId, messageId);
 }
 
 async function showMainInternal(context: AppContext, chatId: ChatId, messageId?: number): Promise<void> {
-  const zh = isZh(settingsFor(context, chatId), context, chatId);
-  const text = zh ? "⚙️ AGY 控制面板" : "⚙️ AGY Control Panel";
+  const text = controlPanelHtml(context, chatId);
   const keyboard = mainInlineKeyboard(context, chatId);
   if (messageId) {
-    await context.telegram.editMessageText(chatId, messageId, text, keyboard);
-    await context.state.setSession(chatId, { lastMenuMessageId: messageId, activeMenuScreen: "main" });
+    await context.telegram.editMessageText(chatId, messageId, text, keyboard, "HTML");
+    await context.state.setSession(chatId, { lastMenuMessageId: messageId, activeMenuScreen: "main", pendingInput: null });
   } else {
     try {
-      const sent = await context.telegram.sendMessage(chatId, text, keyboard);
+      const sent = await context.telegram.sendMessage(chatId, text, keyboard, "HTML");
       if (sent?.message_id) {
-        await context.state.setSession(chatId, { lastMenuMessageId: sent.message_id, activeMenuScreen: "main" });
+        await context.state.setSession(chatId, { lastMenuMessageId: sent.message_id, activeMenuScreen: "main", pendingInput: null });
       }
     } catch {
-      await reply(context, chatId, text, keyboard);
+      await reply(context, chatId, text.replace(/<[^>]+>/g, ""), keyboard);
     }
   }
 }
@@ -80,7 +87,8 @@ export async function refreshActiveMenu(context: AppContext, chatId: ChatId): Pr
 }
 
 export async function showResumeMenu(context: AppContext, chatId: ChatId, page = 0, messageId?: number): Promise<void> {
-  const zh = isZh(settingsFor(context, chatId), context, chatId);
+  const lang = resolveLang(settingsFor(context, chatId), context, chatId);
+  const zh = lang === "zh";
   const pageData = context.convDb.getConversations(page, 5);
   const text = resumeMessageText(pageData, zh);
   const keyboard = resumeKeyboard(pageData.page, pageData.totalPages, pageData.items, zh);
@@ -114,9 +122,6 @@ function truncateText(text: string, maxChars: number): string {
   return chars.length <= maxChars ? text : chars.slice(0, maxChars).join("");
 }
 
-// `agy changelog` prints the full history (1000+ lines), which Telegram
-// would split into dozens of messages. Show only the latest version's
-// first few entries instead, with a pointer to the full log.
 export function formatChangelogSummary(output: string): string {
   const lines = output.split(/\r?\n/);
   const versionHeader = /^(\d+\.\d+\.\d+):\s*$/;
@@ -134,7 +139,6 @@ export function formatChangelogSummary(output: string): string {
   const section = lines.slice(0, end);
   while (section.length && !section[section.length - 1].trim()) section.pop();
   if (!seenFirst) {
-    // Not a changelog (e.g. an error message): keep it short, don't mangle it.
     const text = output.trim();
     return text.length > 3000 ? `${truncateText(text, 3000)}\n…` : text;
   }
@@ -175,57 +179,203 @@ export async function cliOutput(context: AppContext, chatId: ChatId, messageId: 
   }
 }
 
+const INTERACTIVE_CLI_KINDS = new Set<string>([
+  "project",
+  "agent",
+  "add-dir",
+  "json-schema",
+  "log-file",
+  "print-timeout",
+  "custom-agy",
+  "directive-plan",
+  "directive-boost",
+  "directive-goal",
+  "directive-grill-me",
+  "directive-learn",
+  "plugin-install",
+  "plugin-uninstall",
+  "plugin-enable",
+  "plugin-disable",
+  "mcp-enable",
+  "mcp-disable",
+  "git-commit",
+  "git-clone",
+]);
+
+export async function showPendingInputPrompt(
+  context: AppContext,
+  chatId: ChatId,
+  messageId: number,
+  kind: PendingInputKind,
+  sendNewMessage = false,
+): Promise<void> {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+
+  const currentMap: Partial<Record<PendingInputKind, string>> = {
+    project: settings.project || t(lang, "common.default"),
+    agent: settings.agent || t(lang, "common.default"),
+    "add-dir": settings.addDirs?.length ? settings.addDirs.join(", ") : t(lang, "common.none"),
+    "json-schema": settings.jsonSchema || t(lang, "common.none"),
+    "log-file": settings.logFile || t(lang, "common.none"),
+    "print-timeout": settings.printTimeout || t(lang, "common.default"),
+    "custom-agy": "/agy ...",
+  };
+
+  const titleKeyMap: Record<PendingInputKind, { title: Parameters<typeof t>[1]; hint: Parameters<typeof t>[1]; isDirective?: boolean }> = {
+    project: { title: "input.projectTitle", hint: "input.projectHint" },
+    agent: { title: "input.agentTitle", hint: "input.agentHint" },
+    "add-dir": { title: "input.addDirTitle", hint: "input.addDirHint" },
+    "json-schema": { title: "input.jsonSchemaTitle", hint: "input.jsonSchemaHint" },
+    "log-file": { title: "input.logFileTitle", hint: "input.logFileHint" },
+    "print-timeout": { title: "input.printTimeoutTitle", hint: "input.printTimeoutHint" },
+    "custom-agy": { title: "input.customAgyTitle", hint: "input.customAgyHint" },
+    "directive-plan": { title: "input.directivePlanTitle", hint: "input.directivePlanHint", isDirective: true },
+    "directive-boost": { title: "input.directiveBoostTitle", hint: "input.directiveBoostHint", isDirective: true },
+    "directive-goal": { title: "input.directiveGoalTitle", hint: "input.directiveGoalHint", isDirective: true },
+    "directive-grill-me": { title: "input.directiveGrillTitle", hint: "input.directiveGrillHint", isDirective: true },
+    "directive-learn": { title: "input.directiveLearnTitle", hint: "input.directiveLearnHint", isDirective: true },
+    "plugin-install": { title: "input.pluginInstallTitle", hint: "input.pluginInstallHint", isDirective: true },
+    "plugin-uninstall": { title: "input.pluginUninstallTitle", hint: "input.pluginUninstallHint", isDirective: true },
+    "plugin-enable": { title: "input.pluginEnableTitle", hint: "input.pluginEnableHint", isDirective: true },
+    "plugin-disable": { title: "input.pluginDisableTitle", hint: "input.pluginDisableHint", isDirective: true },
+    "mcp-enable": { title: "input.mcpEnableTitle", hint: "input.mcpEnableHint", isDirective: true },
+    "mcp-disable": { title: "input.mcpDisableTitle", hint: "input.mcpDisableHint", isDirective: true },
+    "git-commit": { title: "input.gitCommitTitle", hint: "input.gitCommitHint", isDirective: true },
+    "git-clone": { title: "input.gitCloneTitle", hint: "input.gitCloneHint", isDirective: true },
+  };
+
+  const keys = titleKeyMap[kind];
+  const current = currentMap[kind] || "";
+  const hasValue =
+    (kind === "project" && Boolean(settings.project)) ||
+    (kind === "agent" && Boolean(settings.agent)) ||
+    (kind === "add-dir" && Boolean(settings.addDirs?.length)) ||
+    (kind === "json-schema" && Boolean(settings.jsonSchema)) ||
+    (kind === "log-file" && Boolean(settings.logFile)) ||
+    (kind === "print-timeout" && Boolean(settings.printTimeout));
+
+  const body = keys.isDirective
+    ? t(lang, "input.directivePrompt", {
+        title: t(lang, keys.title),
+        hint: t(lang, keys.hint),
+      })
+    : t(lang, "input.prompt", {
+        title: t(lang, keys.title),
+        current: escapeHtml(current),
+        hint: t(lang, keys.hint),
+      });
+
+  const kb = pendingInputKeyboard(kind, hasValue, lang);
+  let targetMsgId = messageId;
+  if (sendNewMessage || !messageId) {
+    const sent = await context.telegram.sendMessage(chatId, body, kb, "HTML");
+    targetMsgId = sent?.message_id || messageId;
+  } else {
+    try {
+      await context.telegram.editMessageText(chatId, messageId, body, kb, "HTML");
+    } catch {
+      const sent = await context.telegram.sendMessage(chatId, body, kb, "HTML");
+      targetMsgId = sent?.message_id || messageId;
+    }
+  }
+
+  const currentSession = context.state.session(chatId) || {};
+  await context.state.setSession(chatId, {
+    ...currentSession,
+    pendingInput: { kind, messageId: targetMsgId },
+  });
+}
+
 export async function showCliOption(context: AppContext, chatId: ChatId, messageId: number, option: string): Promise<void> {
+  if (INTERACTIVE_CLI_KINDS.has(option)) {
+    await showPendingInputPrompt(context, chatId, messageId, option as PendingInputKind);
+    return;
+  }
+  const lang = resolveLang(settingsFor(context, chatId), context, chatId);
   const examples: Record<string, string> = {
-    project: "/agy --project PROJECT --print \"prompt\"",
-    agent: "/agy --agent NAME --print \"prompt\"",
     continue: "/agy --continue --print \"prompt\"",
     "new-project": "/agy --new-project --print \"prompt\"",
     "output-format": "/agy --output-format text --print \"prompt\"",
     "disable-slash": "/agy --disable-slash-commands --print \"prompt\"",
-    "add-dir": "/agy --add-dir /path --print \"prompt\"",
-    "json-schema": "/agy --json-schema '{\"type\":\"object\"}' --print \"prompt\"",
-    "log-file": "/agy --log-file /path/log --print \"prompt\"",
-    "print-timeout": "/agy --print-timeout 10m --print \"prompt\"",
     conversation: "/agy --conversation CONVERSATION_ID --print \"prompt\"",
     prompt: "/agy --print \"prompt\" --output-format stream-json",
   };
-  await context.telegram.editMessageText(chatId, messageId, `Use this custom command:\n\n${examples[option] || "/agy --help"}`, backKeyboard());
+  await context.telegram.editMessageText(
+    chatId,
+    messageId,
+    `${lang === "zh" ? "可使用以下自定义命令：" : "Use this custom command:"}\n\n${examples[option] || "/agy --help"}`,
+    backKeyboard(lang === "zh"),
+  );
 }
 
 export async function showMenu(context: AppContext, chatId: ChatId, messageId: number, kind: string, page = 0): Promise<void> {
-  const zh = isZh(settingsFor(context, chatId), context, chatId);
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+  const zh = lang === "zh";
   if (kind === "main") return showMain(context, chatId, messageId);
-  await context.state.setSession(chatId, { activeMenuScreen: kind });
-  if (kind === "model" || kind === "models") {
-    await refreshModels(context);
-    return context.telegram.editMessageText(chatId, messageId, zh ? "请选择模型：" : "Select a model:", modelKeyboard(context, chatId, page));
+  await context.state.setSession(chatId, { activeMenuScreen: kind, pendingInput: null });
+  if (kind === "guide" || kind.startsWith("guide:")) {
+    const rawTab = kind.includes(":") ? kind.split(":")[1] : "new";
+    const tab = (rawTab === "directives" || rawTab === "session" || rawTab === "tools" ? rawTab : "new") as
+      | "new"
+      | "directives"
+      | "session"
+      | "tools";
+    const screenKeyMap = {
+      new: "guide.screenNew",
+      directives: "guide.screenDirectives",
+      session: "guide.screenSession",
+      tools: "guide.screenTools",
+    } as const;
+    return context.telegram.editMessageText(chatId, messageId, t(lang, screenKeyMap[tab]), guideKeyboard(tab, lang), "HTML");
   }
-  if (kind === "effort") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择思考深度：" : "Select reasoning effort:", effortKeyboard(context, chatId));
-  if (kind === "mode") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择执行模式：" : "Select execution mode:", modeKeyboard(context, chatId));
-  if (kind === "sandbox") return context.telegram.editMessageText(chatId, messageId, zh ? `沙箱状态：${settingsFor(context, chatId).sandbox ? "已开启" : "已关闭"}。` : `Sandbox is ${settingsFor(context, chatId).sandbox ? "enabled" : "disabled"}.`, sandboxKeyboard(context, chatId));
-  if (kind === "verbose") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择执行过程详细程度：" : "Select progress verbosity during execution:", verboseKeyboard(context, chatId));
-  if (kind === "workspace" || kind === "workspaces") return context.telegram.editMessageText(chatId, messageId, zh ? "请选择项目工作区：" : "Select a project workspace:", workspaceKeyboard(context, chatId, page));
-  if (kind === "session") return context.telegram.editMessageText(chatId, messageId, sessionText(context, chatId), backKeyboard());
+  if (kind === "directives") {
+    return context.telegram.editMessageText(chatId, messageId, t(lang, "directives.title"), directivesKeyboard(lang), "HTML");
+  }
+  if (kind === "model" || kind === "models") {
+    if (page === 0) {
+      await Promise.all([
+        refreshModels(context).catch(() => undefined),
+        refreshCliCapabilities(context.config.agy).catch(() => undefined),
+      ]);
+    }
+    return context.telegram.editMessageText(chatId, messageId, t(lang, "model.select"), modelKeyboard(context, chatId, page), "HTML");
+  }
+  if (kind === "effort") {
+    await refreshCliCapabilities(context.config.agy).catch(() => undefined);
+    return context.telegram.editMessageText(chatId, messageId, t(lang, "effort.select"), effortKeyboard(context, chatId), "HTML");
+  }
+  if (kind === "mode") {
+    await refreshCliCapabilities(context.config.agy).catch(() => undefined);
+    return context.telegram.editMessageText(chatId, messageId, t(lang, "mode.select"), modeKeyboard(context, chatId), "HTML");
+  }
+  if (kind === "sandbox") {
+    return context.telegram.editMessageText(
+      chatId,
+      messageId,
+      t(lang, "sandbox.status", { state: settings.sandbox ? t(lang, "common.enabled") : t(lang, "common.disabled") }),
+      sandboxKeyboard(context, chatId),
+      "HTML",
+    );
+  }
+  if (kind === "verbose") return context.telegram.editMessageText(chatId, messageId, t(lang, "verbose.select"), verboseKeyboard(context, chatId), "HTML");
+  if (kind === "workspace" || kind === "workspaces") return context.telegram.editMessageText(chatId, messageId, t(lang, "ws.select"), workspaceKeyboard(context, chatId, page));
+  if (kind === "session") return context.telegram.editMessageText(chatId, messageId, sessionText(context, chatId), backKeyboard(zh));
   if (kind === "resume") return showResumeMenu(context, chatId, page, messageId);
   if (kind === "usage") { enqueueJob(context, chatId, { kind: "usage" }); return; }
   if (kind === "credits") { enqueueJob(context, chatId, { kind: "credits" }); return; }
-  if (kind === "cli") return context.telegram.editMessageText(chatId, messageId, zh ? "所有 AGY CLI 选项均可通过 /agy 使用。常用会话选项可在此设置；需要路径或值的选项请参考命令示例。" : "All AGY CLI flags are available with /agy. Common session flags can be set here; options that need a path or value have a command example.", cliOptionsKeyboard(context, chatId));
-  if (kind === "output") return context.telegram.editMessageText(chatId, messageId, "Select the output format used by future normal prompts:", outputFormatKeyboard(context, chatId));
-  if (kind === "custom") return context.telegram.editMessageText(chatId, messageId, "Custom AGY command\n\nUse /agy followed by any non-interactive AGY arguments. Example:\n/agy --print \"Explain this project\" --output-format text\n\nInteractive TTY mode is unavailable through Telegram.", backKeyboard());
-  if (kind === "plugins") return context.telegram.editMessageText(chatId, messageId, "Plugin commands\n\nRead-only:\n/agy plugin list\n\nMutating commands require /agy-confirm after the bot asks for confirmation:\n/agy plugin install NAME\n/agy plugin uninstall NAME\n/agy plugin enable NAME\n/agy plugin disable NAME\n/agy update", backKeyboard());
+  if (kind === "cli") return context.telegram.editMessageText(chatId, messageId, t(lang, "cliopts.title"), cliOptionsKeyboard(context, chatId), "HTML");
+  if (kind === "output") return context.telegram.editMessageText(chatId, messageId, t(lang, "cliopts.outputSelect"), outputFormatKeyboard(context, chatId));
+  if (kind === "custom") return showPendingInputPrompt(context, chatId, messageId, "custom-agy");
+  if (kind === "plugins") return context.telegram.editMessageText(chatId, messageId, t(lang, "plugins.screen"), pluginsKeyboard(lang), "HTML");
   if (kind === "mcp") {
     return context.telegram.editMessageText(
       chatId,
       messageId,
-      "<b>MCP Servers (Model Context Protocol)</b>\n\nRead-only:\n• <code>/mcp</code> or <code>/agy mcp list</code>\n\nMutating commands (require confirmation via /agy-confirm):\n• <code>/agy mcp enable &lt;name&gt;</code>\n• <code>/agy mcp disable &lt;name&gt;</code>\n• <code>/agy mcp add &lt;name&gt; &lt;command&gt;</code>\n• <code>/agy mcp remove &lt;name&gt;</code>",
-      {
-        inline_keyboard: [
-          [button("📋 List MCP Servers", "cli:mcp")],
-          [button("‹ Back", "menu:clitools")],
-        ],
-      },
-      "HTML"
+      t(lang, "mcp.screen"),
+      mcpKeyboard(lang),
+      "HTML",
     );
   }
   if (kind === "skills") {
@@ -233,63 +383,66 @@ export async function showMenu(context: AppContext, chatId: ChatId, messageId: n
     return;
   }
   if (kind === "profile") {
-    const current = settingsFor(context, chatId).menuProfile || "mixed";
-    return context.telegram.editMessageText(chatId, messageId, `<b>Menu Profile</b>\n\nChoose the interface density and button layout for <code>/menu</code>:\n\n• <b>Mixed</b>: Balanced 4-row layout (default)\n• <b>Daily</b>: Minimalist 3-row layout for fast chat & voice\n• <b>Dev</b>: 5-row layout with Workspace, Modes, CLI & Context`, menuProfileKeyboard(current), "HTML");
+    const current = settings.menuProfile || "mixed";
+    return context.telegram.editMessageText(chatId, messageId, t(lang, "profile.screen"), menuProfileKeyboard(current, lang), "HTML");
   }
   if (kind === "lang" || kind === "language") {
-    const current = settingsFor(context, chatId);
-    const zh = isZh(current, context, chatId);
     const keyboard = {
       inline_keyboard: [
         [
-          button(`${current.language !== "zh" ? "✅ " : ""}🇬🇧 English (Default)`, "set:lang:en"),
-          button(`${current.language === "zh" ? "✅ " : ""}🇨🇳 中文 (Chinese)`, "set:lang:zh"),
+          button(`${settings.language !== "zh" ? "✅ " : ""}🇬🇧 English (Default)`, "set:lang:en"),
+          button(`${settings.language === "zh" ? "✅ " : ""}🇨🇳 中文 (Chinese)`, "set:lang:zh"),
         ],
-        [button(zh ? "‹ 返回" : "‹ Back", "menu:main")],
+        [button(t(lang, "common.back"), "menu:main")],
       ],
     };
+    return context.telegram.editMessageText(chatId, messageId, t(lang, "lang.screen"), keyboard, "HTML");
+  }
+  if (kind === "modesandbox") return context.telegram.editMessageText(chatId, messageId, t(lang, "modesandbox.title"), modeSandboxKeyboard(context, chatId), "HTML");
+  if (kind === "clitools") return context.telegram.editMessageText(chatId, messageId, t(lang, "clitools.title"), cliToolsKeyboard(context, chatId), "HTML");
+  if (kind === "doctor") {
+    const report = inspectEnvironment(context.config);
     return context.telegram.editMessageText(
       chatId,
       messageId,
-      zh
-        ? `<b>🌐 语言设置 (Language Settings)</b>\n\n当前界面语言：<b>简体中文</b>\n\n请选择你偏好的交互语言：`
-        : `<b>🌐 Language Settings</b>\n\nCurrent interface language: <b>English</b>\n\nSelect your preferred language:`,
-      keyboard,
-      "HTML"
+      formatEnvDoctorHtml(report, lang),
+      {
+        inline_keyboard: [
+          [button(t(lang, "common.refresh"), "menu:doctor"), button(t(lang, "common.backToCliTools"), "menu:clitools")],
+          [button(t(lang, "common.backToMenu"), "menu:main")],
+        ],
+      },
+      "HTML",
     );
   }
-  if (kind === "modesandbox") return context.telegram.editMessageText(chatId, messageId, zh ? "配置执行模式、沙箱、详细程度与会话详情：" : "Configure execution mode, sandbox, verbosity, and session details:", modeSandboxKeyboard(context, chatId));
-  if (kind === "clitools") return context.telegram.editMessageText(chatId, messageId, zh ? "CLI 选项、遥测与系统维护：" : "CLI options, telemetry, and system maintenance:", cliToolsKeyboard(context, chatId));
-  if (kind === "voice") return context.telegram.editMessageText(chatId, messageId, "Configure Speech-to-Text (STT) and Text-to-Speech (TTS):", voiceSettingsKeyboard(context, chatId));
-  if (kind === "stt") return context.telegram.editMessageText(chatId, messageId, "Select STT option to configure:", sttKeyboard(context, chatId));
-  if (kind === "stt:provider") return context.telegram.editMessageText(chatId, messageId, "Select STT provider:", sttProviderKeyboard(context, chatId));
-  if (kind === "stt:whisper") return context.telegram.editMessageText(chatId, messageId, "Select Whisper model:", sttWhisperModelKeyboard(context, chatId));
-  if (kind === "stt:lang") return context.telegram.editMessageText(chatId, messageId, "Select STT language:", sttLangKeyboard(context, chatId));
-  if (kind === "tts") return context.telegram.editMessageText(chatId, messageId, "Select TTS option to configure:", ttsKeyboard(context, chatId));
-  if (kind === "tts:mode") return context.telegram.editMessageText(chatId, messageId, "Select TTS response mode:", ttsModeKeyboard(context, chatId));
-  if (kind === "tts:voice") return context.telegram.editMessageText(chatId, messageId, "Select TTS voice:", ttsVoiceKeyboard(context, chatId));
+  if (kind === "voice") return context.telegram.editMessageText(chatId, messageId, t(lang, "voice.screen"), voiceSettingsKeyboard(context, chatId));
+  if (kind === "stt") return context.telegram.editMessageText(chatId, messageId, t(lang, "stt.screen"), sttKeyboard(context, chatId));
+  if (kind === "stt:provider") return context.telegram.editMessageText(chatId, messageId, t(lang, "stt.providerScreen"), sttProviderKeyboard(context, chatId));
+  if (kind === "stt:whisper") return context.telegram.editMessageText(chatId, messageId, t(lang, "stt.whisperScreen"), sttWhisperModelKeyboard(context, chatId));
+  if (kind === "stt:lang") return context.telegram.editMessageText(chatId, messageId, t(lang, "stt.langScreen"), sttLangKeyboard(context, chatId));
+  if (kind === "tts") return context.telegram.editMessageText(chatId, messageId, t(lang, "tts.screen"), ttsKeyboard(context, chatId));
+  if (kind === "tts:mode") return context.telegram.editMessageText(chatId, messageId, t(lang, "tts.modeScreen"), ttsModeKeyboard(context, chatId));
+  if (kind === "tts:voice") return context.telegram.editMessageText(chatId, messageId, t(lang, "tts.voiceScreen"), ttsVoiceKeyboard(context, chatId));
   if (kind === "remote-control") {
     let active = false;
     let statusText = "";
     try {
       const output = await runAgyCommand(context.config.agy, ["remote-control", "status"], 10_000);
       active = /Daemon status:\s*active/i.test(output);
-      // Extract instance name line if present
       const instanceMatch = output.match(/Instance name:\s*(.+)/);
       const instanceLine = instanceMatch ? instanceMatch[1].trim() : "";
       const sinceMatch = output.match(/Active since:\s*(.+)/);
       const sinceLine = sinceMatch ? sinceMatch[1].trim() : "";
       if (active) {
-        statusText = zh
-          ? `🟢 远程控制：<b>运行中</b>\n\n实例名称：<code>${instanceLine}</code>${sinceLine ? `\n启动时间：${sinceLine}` : ""}\n\n可在 antigravity.google.com 找到此实例。`
-          : `🟢 Remote Control: <b>Active</b>\n\nInstance: <code>${instanceLine}</code>${sinceLine ? `\nSince: ${sinceLine}` : ""}\n\nFind it at antigravity.google.com`;
+        statusText = t(lang, "rc.active", {
+          instance: escapeHtml(instanceLine),
+          since: sinceLine ? `\n${zh ? "启动时间" : "Since"}: ${escapeHtml(sinceLine)}` : "",
+        });
       } else {
-        statusText = zh
-          ? `🔴 远程控制：<b>未运行</b>\n\n点击下方按钮开启，实例将在 1 分钟内出现在 antigravity.google.com。`
-          : `🔴 Remote Control: <b>Inactive</b>\n\nClick the button below to start. The instance will appear at antigravity.google.com within a minute.`;
+        statusText = t(lang, "rc.inactive");
       }
     } catch {
-      statusText = zh ? "⚠️ 无法查询远程控制状态。" : "⚠️ Could not query remote control status.";
+      statusText = t(lang, "rc.error");
     }
     return context.telegram.editMessageText(chatId, messageId, statusText, remoteControlKeyboard(active, zh), "HTML");
   }

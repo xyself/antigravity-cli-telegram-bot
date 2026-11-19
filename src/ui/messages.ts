@@ -1,8 +1,10 @@
 import { formatRelativeTime, type ConversationPage } from "../db.js";
 import type { AppContext } from "../context.js";
+import { getCliVersion } from "../cli-capabilities.js";
+import { resolveLang, t } from "../i18n/index.js";
 import { getModelMaxContext, modelLabel, renderContextProgressBar } from "../models.js";
 import { escapeHtml } from "../telegram.js";
-import { isZh, settingsFor } from "../domain/settings.js";
+import { settingsFor } from "../domain/settings.js";
 import { resolveEffectiveForumThreadId } from "../domain/topic-namer.js";
 import type { ChatId, SessionSettings, Usage } from "../types.js";
 
@@ -17,41 +19,84 @@ export function settingsText(settings: SessionSettings): string {
   ].filter(Boolean).join("\n");
 }
 
+/** Live status dashboard rendered at the top of `/menu` & `/start`. */
+export function controlPanelHtml(context: AppContext, chatId: ChatId): string {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+  const session = context.state.session(chatId);
+  const queueStatus = context.queue?.statusForChat(chatId);
+
+  const wsPath = settings.workspace || context.config.agy.workspace;
+  const wsLabel = settings.workspace ? `${wsPath} (${lang === "zh" ? "自定义" : "custom"})` : wsPath;
+
+  const sessionTitle = session?.conversationTitle
+    ? session.conversationTitle.slice(0, 32) + (session.conversationTitle.length > 32 ? "…" : "")
+    : (session?.conversationId ? session.conversationId.slice(0, 8) : t(lang, "panel.newSession"));
+
+  const contextValue = session?.contextTokens
+    ? `${session.contextTokens}${session.contextPercentage !== undefined ? ` (${session.contextPercentage}%)` : ""}`
+    : `${getModelMaxContext(settings.model).toLocaleString()} max`;
+
+  const stt = settings.sttProvider || context.config.stt?.provider || "none";
+  const tts = settings.ttsMode || context.config.tts?.mode || "off";
+  const cliVersion = getCliVersion();
+  const stateLabel = queueStatus?.active
+    ? `${t(lang, "panel.running")}${queueStatus.queued ? ` (+${queueStatus.queued})` : ""}`
+    : t(lang, "panel.idle");
+
+  const lines = [
+    t(lang, "panel.title"),
+    "",
+    `• <b>${t(lang, "panel.model")}:</b> <code>${escapeHtml(modelLabel(settings.model))}</code> · <code>${escapeHtml(settings.effort || "high")}</code>`,
+    `• <b>${t(lang, "panel.mode")}:</b> <code>${escapeHtml(settings.mode || "plan")}</code> · <b>${t(lang, "panel.sandbox")}:</b> <code>${settings.sandbox ? t(lang, "common.on") : t(lang, "common.off")}</code>`,
+    `• <b>${t(lang, "panel.workspace")}:</b> <code>${escapeHtml(wsLabel)}</code>`,
+    `• <b>${t(lang, "panel.session")}:</b> <code>${escapeHtml(sessionTitle)}</code> · <b>${t(lang, "panel.context")}:</b> <code>${escapeHtml(contextValue)}</code>`,
+    `• <b>${t(lang, "panel.voice")}:</b> <code>STT:${escapeHtml(stt)} / TTS:${escapeHtml(tts)}</code> · <b>${t(lang, "panel.status")}:</b> <code>${escapeHtml(stateLabel)}</code>`,
+  ];
+
+  if (cliVersion) {
+    lines.push(`• <b>${t(lang, "panel.cli")}:</b> <code>${escapeHtml(cliVersion)}</code>`);
+  }
+
+  return lines.join("\n");
+}
+
 export function sessionInfoHtml(context: AppContext, chatId: ChatId): string {
   const settings = settingsFor(context, chatId);
-  const zh = isZh(settings, context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+  const zh = lang === "zh";
   const maxContext = getModelMaxContext(settings.model);
-  const contextStr = maxContext ? `${maxContext.toLocaleString()} tokens` : (zh ? "默认" : "Default");
-  const modeStr = settings.mode === "accept-edits" ? (zh ? "编辑模式 (accept-edits)" : "edit (accept-edits)") : (settings.mode || "accept-edits");
+  const contextStr = maxContext ? `${maxContext.toLocaleString()} tokens` : t(lang, "common.default");
+  const modeStr = settings.mode === "accept-edits" ? (zh ? "编辑模式 (accept-edits)" : "edit (accept-edits)") : (settings.mode || "plan");
   const { threadId } = resolveEffectiveForumThreadId(chatId, context.config.telegram?.enableTopics);
   const showAutoTopic = threadId !== undefined || Boolean(settings.autoTopicRename);
 
   if (zh) {
     return [
-      "✨ <b>已开启新的 AGY 对话。</b>\n",
-      `• <b>模型:</b> <code>${escapeHtml(modelLabel(settings.model))}</code>`,
-      `• <b>思考深度:</b> <code>${escapeHtml(settings.effort || "high")}</code>`,
-      `• <b>运行模式:</b> <code>${escapeHtml(modeStr)}</code>`,
-      `• <b>详细程度:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
-      `• <b>上下文上限:</b> <code>${escapeHtml(contextStr)}</code>`,
-      `• <b>沙箱保护:</b> <code>${settings.sandbox ? "已开启" : "已关闭"}</code>`,
-      showAutoTopic ? `• <b>话题短名:</b> <code>${settings.autoTopicRename ? "已开启" : "已关闭"}</code>` : null,
-      settings.workspace ? `• <b>工作区:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
-      context.config.agy.project ? `• <b>项目:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
+      `${t(lang, "session.newStarted")}\n`,
+      `• <b>${t(lang, "panel.model")}:</b> <code>${escapeHtml(modelLabel(settings.model))}</code>`,
+      `• <b>${t(lang, "panel.effort")}:</b> <code>${escapeHtml(settings.effort || "high")}</code>`,
+      `• <b>${t(lang, "panel.mode")}:</b> <code>${escapeHtml(modeStr)}</code>`,
+      `• <b>${t(lang, "panel.verbose")}:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
+      `• <b>${t(lang, "session.contextLimit")}:</b> <code>${escapeHtml(contextStr)}</code>`,
+      `• <b>${t(lang, "panel.sandbox")}:</b> <code>${settings.sandbox ? t(lang, "common.enabledCap") : t(lang, "common.disabledCap")}</code>`,
+      showAutoTopic ? `• <b>${t(lang, "session.autoTopic")}:</b> <code>${settings.autoTopicRename ? t(lang, "common.enabledCap") : t(lang, "common.disabledCap")}</code>` : null,
+      settings.workspace ? `• <b>${t(lang, "panel.workspace")}:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
+      context.config.agy.project ? `• <b>${t(lang, "session.project")}:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
     ].filter(Boolean).join("\n");
   }
 
   return [
-    "✨ <b>New AGY conversation started.</b>\n",
-    `• <b>Model:</b> <code>${escapeHtml(modelLabel(settings.model))}</code>`,
-    `• <b>Effort:</b> <code>${escapeHtml(settings.effort || "high")}</code>`,
-    `• <b>Mode:</b> <code>${escapeHtml(modeStr)}</code>`,
-    `• <b>Verbose:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
-    `• <b>Context Limit:</b> <code>${escapeHtml(contextStr)}</code>`,
-    `• <b>Sandbox:</b> <code>${settings.sandbox ? "Enabled" : "Disabled"}</code>`,
-    showAutoTopic ? `• <b>Auto-Topic:</b> <code>${settings.autoTopicRename ? "Enabled" : "Disabled"}</code>` : null,
-    settings.workspace ? `• <b>Workspace:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
-    context.config.agy.project ? `• <b>Project:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
+    `${t(lang, "session.newStarted")}\n`,
+    `• <b>${t(lang, "panel.model")}:</b> <code>${escapeHtml(modelLabel(settings.model))}</code>`,
+    `• <b>${t(lang, "panel.effort")}:</b> <code>${escapeHtml(settings.effort || "high")}</code>`,
+    `• <b>${t(lang, "panel.mode")}:</b> <code>${escapeHtml(modeStr)}</code>`,
+    `• <b>${t(lang, "panel.verbose")}:</b> <code>${escapeHtml(settings.verbose || "detailed")}</code>`,
+    `• <b>${t(lang, "session.contextLimit")}:</b> <code>${escapeHtml(contextStr)}</code>`,
+    `• <b>${t(lang, "panel.sandbox")}:</b> <code>${settings.sandbox ? t(lang, "common.enabledCap") : t(lang, "common.disabledCap")}</code>`,
+    showAutoTopic ? `• <b>${t(lang, "session.autoTopic")}:</b> <code>${settings.autoTopicRename ? t(lang, "common.enabledCap") : t(lang, "common.disabledCap")}</code>` : null,
+    settings.workspace ? `• <b>${t(lang, "panel.workspace")}:</b> <code>${escapeHtml(settings.workspace)}</code>` : null,
+    context.config.agy.project ? `• <b>${t(lang, "session.project")}:</b> <code>${escapeHtml(context.config.agy.project)}</code>` : null,
   ].filter(Boolean).join("\n");
 }
 
@@ -97,14 +142,15 @@ export function sessionText(context: AppContext, chatId: ChatId): string {
 }
 
 export function resumeMessageText(pageData: ConversationPage, zh = false): string {
+  const lang = zh ? "zh" : "en";
   if (pageData.total === 0 || pageData.items.length === 0) {
-    return zh
-      ? "<b>📂 AGY 历史会话</b>\n\n未在 AGY 数据库中找到已保存的会话。"
-      : "<b>📂 AGY Sessions</b>\n\nNo saved conversations found in AGY database.";
+    return t(lang, "resume.empty");
   }
-  return zh
-    ? `<b>📂 AGY 历史会话</b>\n第 ${pageData.page + 1}/${pageData.totalPages} 页 (共 ${pageData.total} 条)\n请选择要恢复的会话：`
-    : `<b>📂 AGY Sessions</b>\nPage ${pageData.page + 1}/${pageData.totalPages} (${pageData.total} total)\nSelect a session to resume:`;
+  return t(lang, "resume.header", {
+    page: pageData.page + 1,
+    totalPages: pageData.totalPages,
+    total: pageData.total,
+  });
 }
 
 export function usageReport(context: AppContext, chatId: ChatId): string {

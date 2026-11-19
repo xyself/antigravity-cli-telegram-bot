@@ -55,10 +55,32 @@ export type ReplyMarkup = InlineKeyboardMarkup | ReplyKeyboardMarkup;
 export type MenuProfile = "daily" | "dev" | "mixed";
 export type TelemetryPostPromptMode = "inline" | "message" | "separate" | "progress" | "off";
 
+export type PendingInputKind =
+  | "project"
+  | "agent"
+  | "add-dir"
+  | "json-schema"
+  | "log-file"
+  | "print-timeout"
+  | "custom-agy"
+  | "directive-plan"
+  | "directive-boost"
+  | "directive-goal"
+  | "directive-grill-me"
+  | "directive-learn"
+  | "plugin-install"
+  | "plugin-uninstall"
+  | "plugin-enable"
+  | "plugin-disable"
+  | "mcp-enable"
+  | "mcp-disable"
+  | "git-commit"
+  | "git-clone";
+
 export interface SessionSettings {
   model: string | null;
-  effort: "low" | "medium" | "high";
-  mode: "plan" | "accept-edits";
+  effort: string;
+  mode: string;
   sandbox: boolean;
   menuProfile?: MenuProfile;
   telemetryPostPrompt?: TelemetryPostPromptMode;
@@ -119,6 +141,7 @@ export interface SessionState {
   pendingSubagentPoll?: PendingSubagentPoll | null;
   hasAutoRenamedTopic?: boolean;
   pendingBtw?: boolean;
+  pendingInput?: { kind: PendingInputKind; messageId?: number } | null;
 }
 
 export interface PendingSubagentPoll {
@@ -153,6 +176,8 @@ export interface InFlightJob {
   startedAt: number;
   subagentRole?: string | null;
   conversationId?: string | null;
+  /** Times this job has already been auto-resumed after a service restart. Caps the restart loop. */
+  resumeCount?: number;
 }
 
 export interface PersistedState {
@@ -165,11 +190,11 @@ export interface AgyConfig {
   bin: string;
   workspace: string;
   project: string;
-  mode: "plan" | "accept-edits";
+  mode: string;
   sandbox: boolean;
   allowSandboxDisable: boolean;
   model: string;
-  effort: "low" | "medium" | "high";
+  effort: string;
   allowedModels: string[];
   timeoutMs: number;
   idleTimeoutMs?: number;
@@ -259,8 +284,8 @@ export interface RunnerOptions {
   signal?: AbortSignal;
   onEvent?: (event: StreamEvent) => void;
   model?: string | null;
-  effort?: "low" | "medium" | "high";
-  mode?: "plan" | "accept-edits";
+  effort?: string;
+  mode?: string;
   sandbox?: boolean;
   project?: string | null;
   outputFormat?: string;

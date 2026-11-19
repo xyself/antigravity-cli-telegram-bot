@@ -1,6 +1,8 @@
 import type { AppContext } from "../context.js";
 import { controllerKey } from "../context.js";
+import { getActiveEfforts, getActiveModes } from "../cli-capabilities.js";
 import { isEffort, isMode, isVerbose } from "../config.js";
+import { resolveLang, t } from "../i18n/index.js";
 import { getActiveModels } from "../models.js";
 import { runAgyCommand } from "../agy-runner.js";
 import { createMainKeyboard } from "../keyboards.js";
@@ -27,8 +29,7 @@ import { sessionInfoHtml, sessionOptionUsage, sessionText, usageReport } from ".
 import { cliOutput, formatChangelogSummary, showMain, showResumeMenu } from "../ui/screens.js";
 import { reply, replyWithHtml } from "../ui/reply.js";
 import { enqueueJob } from "../usecases/enqueue.js";
-import { checkCliCompat } from "../usecases/cli-compat-check.js";
-import { refreshModels, selectModel } from "../usecases/model-selection.js";
+import { refreshModels, selectModel, syncModelForEffort } from "../usecases/model-selection.js";
 import { persistDefaultSettings } from "../usecases/default-settings.js";
 import { runCustomAgy } from "../usecases/custom-agy.js";
 import { isWhisperInstalled, warmupWhisperLocal } from "../stt/stt-service.js";
@@ -44,6 +45,7 @@ import { handleBackupCommand } from "../usecases/backup-command.js";
 import { handleBtwCommand } from "../usecases/btw-command.js";
 import { handleForkCommand } from "../usecases/fork-command.js";
 import { handleRewindCommand } from "../usecases/rewind-command.js";
+import { formatEnvDoctorHtml, inspectEnvironment } from "../infra/env-doctor.js";
 import { escapeHtml } from "../telegram.js";
 import type { ChatId, TelegramMessage } from "../types.js";
 
@@ -102,93 +104,99 @@ command("/restart", "/restart_bot", "/restart-bot", "/reboot")(async ({ context,
 });
 
 command("/models", "/model")(async ({ context, chatId, args }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
   if (!args[0] || args[0].toLowerCase() === "list") {
     await refreshModels(context);
-    await reply(context, chatId, "Select a model:", modelKeyboard(context, chatId, 0));
+    await replyWithHtml(context, chatId, t(lang, "model.select"), modelKeyboard(context, chatId, 0));
     return;
   }
   if (args[0].toLowerCase() === "refresh") {
-    await reply(context, chatId, "Refreshing available models from AGY...");
+    await reply(context, chatId, t(lang, "model.refreshing"));
     await refreshModels(context);
-    await reply(context, chatId, `Models refreshed (${getActiveModels().length} available).`, modelKeyboard(context, chatId, 0));
+    await reply(context, chatId, t(lang, "model.refreshed", { count: getActiveModels().length }), modelKeyboard(context, chatId, 0));
     return;
   }
   const targetModel = args[0].trim();
   const outcome = await selectModel(context, chatId, targetModel);
   if (!outcome) {
-    await reply(context, chatId, `Unknown model: ${targetModel}\nAllowed: ${getActiveModels().map((m) => m.id).join(", ")}`, modelKeyboard(context, chatId, 0));
+    await reply(context, chatId, t(lang, "model.unknown", { model: targetModel, allowed: getActiveModels().map((m) => m.id).join(", ") }), modelKeyboard(context, chatId, 0));
     return;
   }
   await replyWithHtml(context, chatId, outcome.text, outcome.defaultOfferKeyboard);
 });
 
 command("/effort")(async ({ context, chatId, args }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
   if (!args[0]) {
-    await reply(context, chatId, "Select reasoning effort:", effortKeyboard(context, chatId));
+    await replyWithHtml(context, chatId, t(lang, "effort.select"), effortKeyboard(context, chatId));
     return;
   }
   const targetEffort = args[0].toLowerCase().trim();
   if (!isEffort(targetEffort)) {
-    await reply(context, chatId, `Invalid effort: ${targetEffort}. Choose: low, medium, high.`, effortKeyboard(context, chatId));
+    await reply(context, chatId, t(lang, "effort.invalid", { value: targetEffort, choices: getActiveEfforts().join(", ") }), effortKeyboard(context, chatId));
     return;
   }
-  const settings = settingsFor(context, chatId);
-  settings.effort = targetEffort;
+  syncModelForEffort(settings, targetEffort);
   await saveSettings(context, chatId, settings);
-  await reply(context, chatId, `Effort set to ${targetEffort}.`, createMainKeyboard(settings));
+  await reply(context, chatId, t(lang, "effort.set", { value: targetEffort }), createMainKeyboard(settings));
 });
 
 command("/mode")(async ({ context, chatId, args }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
   if (!args[0]) {
-    await reply(context, chatId, "Select execution mode:", modeKeyboard(context, chatId));
+    await replyWithHtml(context, chatId, t(lang, "mode.select"), modeKeyboard(context, chatId));
     return;
   }
   const targetMode = args[0].toLowerCase().trim();
   if (!isMode(targetMode)) {
-    await reply(context, chatId, `Invalid mode: ${targetMode}. Choose: plan, accept-edits.`, modeKeyboard(context, chatId));
+    await reply(context, chatId, t(lang, "mode.invalid", { value: targetMode, choices: getActiveModes().join(", ") }), modeKeyboard(context, chatId));
     return;
   }
-  const settings = settingsFor(context, chatId);
   settings.mode = targetMode;
   await saveSettings(context, chatId, settings);
-  await reply(context, chatId, `Mode set to ${targetMode}.`, createMainKeyboard(settings));
+  await reply(context, chatId, t(lang, "mode.set", { value: targetMode }), createMainKeyboard(settings));
 });
 
 command("/sandbox")(async ({ context, chatId, args }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
   if (!args[0]) {
-    await reply(context, chatId, `Sandbox is ${settingsFor(context, chatId).sandbox ? "enabled" : "disabled"}.`, sandboxKeyboard(context, chatId));
+    await replyWithHtml(context, chatId, t(lang, "sandbox.status", { state: settings.sandbox ? t(lang, "common.enabled") : t(lang, "common.disabled") }), sandboxKeyboard(context, chatId));
     return;
   }
   const val = args[0].toLowerCase().trim();
   if (!["on", "off"].includes(val)) {
-    await reply(context, chatId, "Use /sandbox on|off.", sandboxKeyboard(context, chatId));
+    await reply(context, chatId, t(lang, "sandbox.usage"), sandboxKeyboard(context, chatId));
     return;
   }
   const enable = val === "on";
   if (!enable && !context.config.agy.allowSandboxDisable && context.config.agy.sandbox) {
-    await reply(context, chatId, "Sandbox disabling is locked by server configuration.", createMainKeyboard(settingsFor(context, chatId)));
+    await reply(context, chatId, t(lang, "sandbox.locked"), createMainKeyboard(settings));
     return;
   }
-  const settings = settingsFor(context, chatId);
   settings.sandbox = enable;
   await saveSettings(context, chatId, settings);
-  await reply(context, chatId, `Sandbox ${enable ? "enabled" : "disabled"}.`, createMainKeyboard(settings));
+  await reply(context, chatId, t(lang, "sandbox.set", { state: enable ? t(lang, "common.enabled") : t(lang, "common.disabled") }), createMainKeyboard(settings));
 });
 
 command("/verbose")(async ({ context, chatId, args }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
   if (!args[0]) {
-    await reply(context, chatId, "Select progress verbosity:", verboseKeyboard(context, chatId));
+    await replyWithHtml(context, chatId, t(lang, "verbose.select"), verboseKeyboard(context, chatId));
     return;
   }
   const target = args[0].toLowerCase().trim();
   if (!isVerbose(target)) {
-    await reply(context, chatId, `Invalid verbose level: ${target}. Choose: detailed, compact, silent.`, verboseKeyboard(context, chatId));
+    await reply(context, chatId, t(lang, "verbose.invalid"), verboseKeyboard(context, chatId));
     return;
   }
-  const settings = settingsFor(context, chatId);
   settings.verbose = target;
   await saveSettings(context, chatId, settings);
-  await reply(context, chatId, `Verbose level set to ${target}.`, createMainKeyboard(settings));
+  await reply(context, chatId, t(lang, "verbose.set", { value: target }), createMainKeyboard(settings));
 });
 
 command("/agent")(async ({ context, chatId, args }) => {
@@ -402,9 +410,10 @@ command("/stt")(async ({ context, chatId, args }) => {
     if (currentSettings.sttProvider === "whisper-local") {
       void warmupWhisperLocal(context.config);
     }
-    let replyMsg = `🎙️ STT provider set to <code>${currentSettings.sttProvider}</code>.`;
+    const lang = resolveLang(currentSettings, context, chatId);
+    let replyMsg = t(lang, "stt.providerSet", { value: currentSettings.sttProvider });
     if (currentSettings.sttProvider === "whisper-local" && !isWhisperInstalled(context.config.stt.whisperBin)) {
-      replyMsg += `\n\n⚠️ <i>Hinweis: Das Binary <code>${escapeHtml(context.config.stt.whisperBin || "whisper")}</code> ist im System nicht auffindbar. Bitte Whisper installieren oder Konfiguration prüfen.</i>`;
+      replyMsg += t(lang, "stt.whisperMissing", { bin: escapeHtml(context.config.stt.whisperBin || "whisper") });
     }
     await replyWithHtml(context, chatId, replyMsg, createMainKeyboard(currentSettings));
     return;
@@ -553,14 +562,37 @@ command("/version")(async ({ context, chatId }) => {
   await reply(context, chatId, `AGY version: ${output}`, createMainKeyboard(settingsFor(context, chatId)));
 });
 
-command("/cli-check")(async ({ context, chatId }) => {
-  await reply(context, chatId, "正在检查 CLI 兼容性…", createMainKeyboard(settingsFor(context, chatId)));
+command("/cli-check", "/cli_check")(async ({ context, chatId }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+  const pending = await context.telegram.sendMessage(chatId, t(lang, "clicheck.running"));
   try {
-    const result = await checkCliCompat(context.config.agy, context.config.stateFile);
-    await reply(context, chatId, result.report, createMainKeyboard(settingsFor(context, chatId)));
+    const { checkCliCompat } = await import("../usecases/cli-compat-check.js");
+    const { report } = await checkCliCompat(context.config.agy, context.config.stateFile, lang);
+    await context.telegram.editMessageText(chatId, pending.message_id, report);
   } catch (error) {
-    await reply(context, chatId, `CLI 兼容检查失败：${(error as Error).message}`, createMainKeyboard(settingsFor(context, chatId)));
+    await context.telegram.editMessageText(
+      chatId,
+      pending.message_id,
+      t(lang, "clicheck.failed", { error: (error as Error).message }),
+    );
   }
+});
+
+command("/doctor")(async ({ context, chatId }) => {
+  const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+  const report = inspectEnvironment(context.config);
+  await replyWithHtml(
+    context,
+    chatId,
+    formatEnvDoctorHtml(report, lang),
+    {
+      inline_keyboard: [
+        [button(t(lang, "common.refresh"), "menu:doctor"), button(t(lang, "common.backToMenu"), "menu:main")],
+      ],
+    },
+  );
 });
 
 command("/session")(async ({ context, chatId }) => {
@@ -587,6 +619,7 @@ command("/cancel", "/kill", "/stop")(async ({ context, chatId }) => {
   context.controllers.get(controllerKey("prompt", chatId))?.abort();
   context.controllers.get(controllerKey("custom", chatId))?.abort();
   context.controllers.get(controllerKey("subagent_poller", chatId))?.abort();
+  context.controllers.get(controllerKey("btw", chatId))?.abort();
   const result = context.queue.cancelForChat(chatId);
   await reply(context, chatId, `⛔ Cancelled: ${result.removed} queued job(s) removed, active AGY process terminated.`, createMainKeyboard(settingsFor(context, chatId)));
 });

@@ -2,16 +2,19 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AppContext } from "../context.js";
+import { resolveLang, t } from "../i18n/index.js";
 import { createMainKeyboard } from "../keyboards.js";
 import { button, backKeyboard } from "../ui/inline-keyboards.js";
 import { modelLabel } from "../models.js";
 import { escapeHtml } from "../telegram.js";
 import { settingsFor } from "../domain/settings.js";
 import { replyWithHtml, reply } from "../ui/reply.js";
-import type { ChatId, SessionSettings } from "../types.js";
+import type { ChatId } from "../types.js";
 
 export async function persistDefaultSettings(context: AppContext, chatId: ChatId, messageId?: number): Promise<void> {
   const settings = settingsFor(context, chatId);
+  const lang = resolveLang(settings, context, chatId);
+  const zh = lang === "zh";
   const envPath = context.config.envFile || path.join(os.homedir(), ".config/agy-telegram/.env");
   try {
     let content = "";
@@ -68,19 +71,28 @@ export async function persistDefaultSettings(context: AppContext, chatId: ChatId
       context.config.telegram.autoTopicRename = settings.autoTopicRename;
     }
 
-    const ttsLine = settings.ttsMode ? `\n• <b>TTS:</b> ${escapeHtml(settings.ttsMode)} (${escapeHtml(settings.ttsVoice || "default")})` : "";
-    const sttLine = settings.sttProvider ? `\n• <b>STT:</b> ${escapeHtml(settings.sttProvider)} (${escapeHtml(settings.sttLang || "auto")})` : "";
-    const autoTopicLine = settings.autoTopicRename !== undefined ? `\n• <b>Auto Topic Rename:</b> ${settings.autoTopicRename ? "On" : "Off"}` : "";
-    const text = `💾 <b>Settings saved as permanent defaults:</b>\n\n• <b>Model:</b> ${escapeHtml(modelLabel(settings.model))}\n• <b>Effort:</b> ${settings.effort}\n• <b>Mode:</b> ${settings.mode === "accept-edits" ? "edit" : "plan"}\n• <b>Sandbox:</b> ${settings.sandbox ? "On" : "Off"}${ttsLine}${sttLine}${autoTopicLine}\n\n<i>These defaults will now apply to all new sessions and service restarts.</i>`;
+    const extraParts: string[] = [];
+    if (settings.ttsMode) extraParts.push(`\n• <b>TTS:</b> ${escapeHtml(settings.ttsMode)} (${escapeHtml(settings.ttsVoice || "default")})`);
+    if (settings.sttProvider) extraParts.push(`\n• <b>STT:</b> ${escapeHtml(settings.sttProvider)} (${escapeHtml(settings.sttLang || "auto")})`);
+    if (settings.autoTopicRename !== undefined) {
+      extraParts.push(`\n• <b>${t(lang, "session.autoTopic")}:</b> ${settings.autoTopicRename ? t(lang, "common.on") : t(lang, "common.off")}`);
+    }
+    const text = t(lang, "defaults.saved", {
+      model: escapeHtml(modelLabel(settings.model)),
+      effort: escapeHtml(settings.effort),
+      mode: escapeHtml(settings.mode === "accept-edits" ? "edit" : settings.mode),
+      sandbox: settings.sandbox ? t(lang, "common.on") : t(lang, "common.off"),
+      extra: extraParts.join(""),
+    });
     if (messageId) {
-      await context.telegram.editMessageText(chatId, messageId, text, { inline_keyboard: [[button("‹ Back to Menu", "menu:main")]] }, "HTML");
+      await context.telegram.editMessageText(chatId, messageId, text, { inline_keyboard: [[button(t(lang, "common.backToMenu"), "menu:main")]] }, "HTML");
     } else {
       await replyWithHtml(context, chatId, text, createMainKeyboard(settings));
     }
   } catch (error) {
-    const errorText = `Could not save defaults: ${(error as Error).message}`;
+    const errorText = t(lang, "defaults.failed", { error: (error as Error).message });
     if (messageId) {
-      await context.telegram.editMessageText(chatId, messageId, errorText, backKeyboard());
+      await context.telegram.editMessageText(chatId, messageId, errorText, backKeyboard(zh));
     } else {
       await reply(context, chatId, errorText, createMainKeyboard(settings));
     }

@@ -34,7 +34,9 @@
     "access": "public"
   },
   "scripts": {
+    "dev": "tsx src/dev-server.ts",
     "build": "tsc",
+    "lint": "tsc --noEmit",
     "start": "node dist/cli.js",
     "test": "tsx --test test/*.test.ts",
     "pack:check": "npm pack --dry-run",

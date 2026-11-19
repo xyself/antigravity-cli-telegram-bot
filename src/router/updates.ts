@@ -5,9 +5,10 @@ import type { AppContext } from "../context.js";
 import { controllerKey } from "../context.js";
 import { parseCommandArgs } from "../agy-runner.js";
 import { createMainKeyboard } from "../keyboards.js";
-import { effectiveWorkspaceFor, isZh, saveSettings, settingsFor } from "../domain/settings.js";
+import { effectiveWorkspaceFor, saveSettings, settingsFor } from "../domain/settings.js";
+import { resolveLang, t } from "../i18n/index.js";
 import { sessionInfoHtml } from "../ui/messages.js";
-import { button, modelKeyboard } from "../ui/inline-keyboards.js";
+import { button, cliOptionsKeyboard, modelKeyboard } from "../ui/inline-keyboards.js";
 import { reply, replyWithHtml } from "../ui/reply.js";
 import { showMain, showResumeMenu } from "../ui/screens.js";
 import { enqueueJob } from "../usecases/enqueue.js";
@@ -16,6 +17,7 @@ import { runCustomAgy } from "../usecases/custom-agy.js";
 import { cleanupSessionTempFiles } from "../usecases/session-cleanup.js";
 import { handleDiffCommand } from "../usecases/diff-command.js";
 import { handleForkCommand } from "../usecases/fork-command.js";
+import { handleGitClone, handleGitCommit } from "../usecases/git-actions.js";
 import { handleRewindCommand } from "../usecases/rewind-command.js";
 import { defaultSubagentPoller } from "../usecases/subagent-poller.js";
 import { resetForumTopicNameIfAutoRenamed } from "../usecases/topic-reset.js";
@@ -321,10 +323,11 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
       const whisperBin = context.config.stt.whisperBin || "whisper";
 
       if (provider === "whisper-local" && !isWhisperInstalled(whisperBin)) {
+        const lang = resolveLang(settings, context, sessionKey);
         await replyWithHtml(
           context,
           sessionKey,
-          `⚠️ <b>Whisper nicht verfügbar:</b> Das Binary <code>${escapeHtml(whisperBin)}</code> ist auf dem Server nicht installiert oder nicht im PATH.\n\nBitte wechsle den Provider mit <code>/stt provider gemini</code> oder <code>/stt provider agy</code>.`
+          t(lang, "stt.whisperMissingRuntime", { bin: escapeHtml(whisperBin) }),
         );
       } else {
         const sttService = createSttService(context.config, settings);
@@ -343,10 +346,11 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
             console.error("STT transcription error:", (sttErr as Error).message);
             const errMsg = (sttErr as Error).message;
             if (provider === "whisper-local" && /ENOENT|not found/i.test(errMsg)) {
+              const lang = resolveLang(settings, context, sessionKey);
               await replyWithHtml(
                 context,
                 sessionKey,
-                `⚠️ <b>Whisper nicht gefunden:</b> Das Binary <code>${escapeHtml(whisperBin)}</code> konnte nicht ausgeführt werden.`
+                t(lang, "stt.whisperExecFailed", { bin: escapeHtml(whisperBin) }),
               );
             }
           }
@@ -374,7 +378,7 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
         await replyWithHtml(
           context,
           sessionKey,
-          "🌐 界面语言已切换为：<b>简体中文</b>\n\n💡 <i>提示：若输入框的 / 命令列表未立即更新，请退出当前聊天重进或重启 Telegram。</i>",
+          t("zh", "lang.switched") + t("zh", "lang.refreshTip"),
           createMainKeyboard(current)
         );
         return;
@@ -389,30 +393,29 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
         await replyWithHtml(
           context,
           sessionKey,
-          "🌐 Interface language switched to: <b>English</b>\n\n💡 <i>Tip: If the / command popup has not updated, reopen this chat or restart Telegram to refresh.</i>",
+          t("en", "lang.switched") + t("en", "lang.refreshTip"),
           createMainKeyboard(current)
         );
         return;
       }
-      const zh = isZh(current, context, sessionKey);
+      const lang = resolveLang(current, context, sessionKey);
       const keyboard = {
         inline_keyboard: [
           [
             button(`${current.language !== "zh" ? "✅ " : ""}🇬🇧 English (Default)`, "set:lang:en"),
             button(`${current.language === "zh" ? "✅ " : ""}🇨🇳 中文 (Chinese)`, "set:lang:zh"),
           ],
-          [button(zh ? "‹ 返回" : "‹ Back", "menu:main")],
+          [button(t(lang, "common.back"), "menu:main")],
         ],
       };
-      const text = zh
-        ? `<b>🌐 语言设置 (Language Settings)</b>\n\n当前界面语言：<b>简体中文</b>\n\n快捷切换：<code>/lang en</code> 或 <code>/lang zh</code>`
-        : `<b>🌐 Language Settings</b>\n\nCurrent interface language: <b>English</b>\n\nQuick switch: <code>/lang en</code> or <code>/lang zh</code>`;
-      await replyWithHtml(context, sessionKey, text, keyboard);
+      await replyWithHtml(context, sessionKey, t(lang, "lang.cmdPrompt"), keyboard);
       return;
     }
     if (command.startsWith("/") && await handleCommand(context, message, command, parts.slice(1))) return;
 
-    const zh = isZh(settingsFor(context, sessionKey), context, sessionKey);
+    const currentSettings = settingsFor(context, sessionKey);
+    const lang = resolveLang(currentSettings, context, sessionKey);
+    const zh = lang === "zh";
     const buttonText = rawText;
     if (buttonText === "✨ New session" || buttonText === "✨ New" || buttonText === "✨ 新对话" || buttonText === "✨ 新会话" || buttonText === "新对话" || buttonText === "新会话") {
       context.queue?.cancelForChat(sessionKey);
@@ -427,33 +430,28 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
     }
     if (buttonText === "🛑 Stop" || buttonText === "🛑 Cancel" || buttonText === "Stop" || buttonText === "Cancel" || buttonText === "🛑 停止" || buttonText === "停止" || buttonText === "取消") {
       const existingSession = context.state.session(sessionKey);
-      if (existingSession?.pendingBtw) {
-        await context.state.setSession(sessionKey, { ...existingSession, pendingBtw: false });
+      if (existingSession?.pendingBtw || existingSession?.pendingInput) {
+        await context.state.setSession(sessionKey, { ...existingSession, pendingBtw: false, pendingInput: null });
       }
       context.pendingDangerousCommands?.delete(String(sessionKey));
       context.controllers?.get(controllerKey("prompt", sessionKey))?.abort();
       context.controllers?.get(controllerKey("custom", sessionKey))?.abort();
       context.controllers?.get(controllerKey("subagent_poller", sessionKey))?.abort();
+      context.controllers?.get(controllerKey("btw", sessionKey))?.abort();
       defaultSubagentPoller.cancelPolling(sessionKey);
       const result = context.queue?.cancelForChat(sessionKey);
-      const cancelMsg = zh
-        ? `⛔ 已取消：已移除 ${result?.removed || 0} 个排队任务，当前 AGY 进程已终止。`
-        : `⛔ Cancelled: ${result?.removed || 0} queued job(s) removed, active AGY process terminated.`;
-      await reply(context, sessionKey, cancelMsg, createMainKeyboard(settingsFor(context, sessionKey)));
+      await reply(context, sessionKey, t(lang, "cancel.done", { removed: result?.removed || 0 }), createMainKeyboard(settingsFor(context, sessionKey)));
       return;
     }
     if (buttonText === "🤖 Model" || buttonText === "🤖 模型" || buttonText === "模型") {
       await refreshModels(context);
-      await reply(context, sessionKey, zh ? "请选择模型：" : "Select a model:", modelKeyboard(context, sessionKey));
+      await reply(context, sessionKey, t(lang, "model.select"), modelKeyboard(context, sessionKey));
       return;
     }
     if (buttonText === "💬 临时对话" || buttonText === "💬 Btw" || buttonText === "临时对话" || buttonText === "💬 临时提问") {
       const currentSession = context.state.session(sessionKey) || {};
       await context.state.setSession(sessionKey, { ...currentSession, pendingBtw: true });
-      const promptMsg = zh
-        ? "💬 <b>临时会话模式已就绪</b>\n\n请直接发送您想临时咨询的问题（例如：<code>1+1等于几</code>）：\n\n<i>（临时提问将在独立沙箱中执行并自动清理，完全不污染当前主会话上下文与历史记录）</i>"
-        : "💬 <b>Side question (/btw) mode ready</b>\n\nSend your question directly in the next message to run in an isolated session without polluting conversation history.";
-      await replyWithHtml(context, sessionKey, promptMsg, createMainKeyboard(settingsFor(context, sessionKey)));
+      await replyWithHtml(context, sessionKey, t(lang, "btw.ready"), createMainKeyboard(settingsFor(context, sessionKey)));
       return;
     }
     if (buttonText === "⏪ 回退" || buttonText === "⏪ Rewind" || buttonText === "回退" || buttonText === "⏪ 回退1轮") {
@@ -488,7 +486,7 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
       if (PROMPT_DIRECTIVES.has(candidate)) {
         directive = candidate;
       } else {
-        await reply(context, sessionKey, zh ? "未知命令。请使用 /menu 打开控制面板。" : "Unknown command. Use /menu.", createMainKeyboard(settingsFor(context, sessionKey)));
+        await reply(context, sessionKey, t(lang, "common.unknownCommand"), createMainKeyboard(currentSettings));
         return;
       }
     }
@@ -526,6 +524,80 @@ export async function handleUpdate(context: AppContext, update: TelegramUpdate):
     }
 
     const activeSession = context.state.session(sessionKey);
+    if (activeSession?.pendingInput && rawText) {
+      const pendingKind = activeSession.pendingInput.kind;
+      await context.state.setSession(sessionKey, { ...activeSession, pendingInput: null });
+      const val = rawText.trim();
+      if (pendingKind === "custom-agy") {
+        try {
+          void runCustomAgy(context, sessionKey, parseCommandArgs(val));
+        } catch (error) {
+          await reply(context, sessionKey, `Invalid /agy command: ${(error as Error).message}`, createMainKeyboard(currentSettings));
+        }
+        return;
+      }
+      if (pendingKind.startsWith("directive-")) {
+        const dirName = pendingKind.replace("directive-", "");
+        const dirPrompt = val.startsWith(`/${dirName}`) ? val : `/${dirName} ${val}`;
+        const finalPrompt = promptPrefix ? `${dirPrompt}\n\n${promptPrefix}` : dirPrompt;
+        void context.telegram.sendChatAction(sessionKey, "typing").catch(() => undefined);
+        enqueueJob(context, sessionKey, {
+          prompt: finalPrompt,
+          kind: "prompt",
+          imagePath,
+          documentPath,
+          documentName,
+          mediaPath,
+          mediaType,
+          wasVoiceInput: Boolean(isVoice && transcribedText),
+        });
+        return;
+      }
+      if (pendingKind.startsWith("plugin-")) {
+        const pluginAction = pendingKind.replace("plugin-", "");
+        try {
+          void runCustomAgy(context, sessionKey, ["plugin", pluginAction, ...parseCommandArgs(val)]);
+        } catch (error) {
+          await reply(context, sessionKey, `Invalid plugin arguments: ${(error as Error).message}`, createMainKeyboard(currentSettings));
+        }
+        return;
+      }
+      if (pendingKind.startsWith("mcp-")) {
+        const mcpAction = pendingKind.replace("mcp-", "");
+        try {
+          void runCustomAgy(context, sessionKey, ["mcp", mcpAction, ...parseCommandArgs(val)]);
+        } catch (error) {
+          await reply(context, sessionKey, `Invalid MCP arguments: ${(error as Error).message}`, createMainKeyboard(currentSettings));
+        }
+        return;
+      }
+      if (pendingKind === "git-commit") {
+        await handleGitCommit(context, sessionKey, val);
+        return;
+      }
+      if (pendingKind === "git-clone") {
+        await handleGitClone(context, sessionKey, val);
+        return;
+      }
+      const nextSettings = settingsFor(context, sessionKey);
+      if (pendingKind === "project") nextSettings.project = val.toLowerCase() === "clear" ? null : val;
+      else if (pendingKind === "agent") nextSettings.agent = val.toLowerCase() === "clear" ? null : val;
+      else if (pendingKind === "add-dir") {
+        if (val.toLowerCase() === "clear") nextSettings.addDirs = [];
+        else nextSettings.addDirs = Array.from(new Set([...(nextSettings.addDirs || []), val]));
+      } else if (pendingKind === "json-schema") nextSettings.jsonSchema = val.toLowerCase() === "clear" ? null : val;
+      else if (pendingKind === "log-file") nextSettings.logFile = val.toLowerCase() === "clear" ? null : val;
+      else if (pendingKind === "print-timeout") nextSettings.printTimeout = val.toLowerCase() === "clear" ? null : val;
+      await saveSettings(context, sessionKey, nextSettings);
+      await replyWithHtml(
+        context,
+        sessionKey,
+        t(lang, "input.saved", { field: escapeHtml(pendingKind), value: escapeHtml(val) }),
+        cliOptionsKeyboard(context, sessionKey),
+      );
+      return;
+    }
+
     if (activeSession?.pendingBtw) {
       await context.state.setSession(sessionKey, { ...activeSession, pendingBtw: false });
       void context.telegram.sendChatAction(sessionKey, "typing").catch(() => undefined);

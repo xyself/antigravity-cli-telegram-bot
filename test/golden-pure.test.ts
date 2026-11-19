@@ -21,19 +21,21 @@ const baseConfig: AgyConfig = {
   dbPath: "/tmp/x.db",
 };
 
+const SELF_PROTECTION = "\n\n[Self-protection: do NOT modify, reinstall, or restart the Telegram bot running this session (~/antigravity-cli-telegram-bot, /usr/local/lib/node_modules/agy-telegram). Never run 'npm install -g' for it or 'systemctl restart/stop agy-telegram'. Only change /etc/agy-telegram.env variables the user explicitly named, and never restart the service afterwards - report that a manual restart is needed.]";
+
 test("golden: buildArgs emits exact CLI contract for a default stream-json prompt", () => {
   const args = buildArgs(baseConfig, "hello", null, {});
-  assert.deepEqual(args, ["--print", "hello", "--output-format", "stream-json", "--print-timeout", "60s", "--mode", "accept-edits", "--effort", "high", "--add-dir", "/srv/ws"]);
+  assert.deepEqual(args, ["--print", `hello${SELF_PROTECTION}`, "--output-format", "stream-json", "--print-timeout", "60s", "--mode", "accept-edits", "--effort", "high", "--add-dir", "/srv/ws"]);
 });
 
 test("golden: buildArgs injects attachment notes and add-dir for image and document runs", () => {
   const imageArgs = buildArgs(baseConfig, "", null, { imagePath: "/tmp/pic.png" });
-  assert.equal(imageArgs[1], "Please analyze this image: /tmp/pic.png");
+  assert.equal(imageArgs[1], `Please analyze this image: /tmp/pic.png${SELF_PROTECTION}`);
   assert.ok(imageArgs.includes("--add-dir"));
   assert.ok(imageArgs.includes("/tmp"));
 
   const docArgs = buildArgs(baseConfig, "summarize", "conv-1", { documentPath: "/ws/doc.pdf" });
-  assert.equal(docArgs[1], "summarize\n\n[Document attached: /ws/doc.pdf]");
+  assert.equal(docArgs[1], `summarize\n\n[Document attached: /ws/doc.pdf]${SELF_PROTECTION}`);
   assert.ok(docArgs.includes("--conversation"));
   assert.ok(docArgs.includes("conv-1"));
 });

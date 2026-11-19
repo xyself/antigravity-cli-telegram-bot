@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import dns from "node:dns";
+import path from "node:path";
 import { createRequire } from "node:module";
 import { defaultEnvFile, loadEnvFile, runSetup } from "./setup.js";
 
@@ -31,10 +32,15 @@ complete configuration and deployment guide.`);
 }
 
 const envFile = process.env.AGY_ENV_FILE || defaultEnvFile();
-const savedEnv = await loadEnvFile(envFile);
+const candidates = process.env.AGY_ENV_FILE
+  ? [process.env.AGY_ENV_FILE]
+  : [path.resolve(process.cwd(), ".env"), defaultEnvFile()];
 const explicitEnv = Boolean(process.env.AGY_ENV_FILE);
-for (const [key, value] of Object.entries(savedEnv)) {
-  if (explicitEnv || process.env[key] === undefined) process.env[key] = value;
+for (const candidate of candidates) {
+  const savedEnv = await loadEnvFile(candidate);
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (explicitEnv || !process.env[key]?.trim()) process.env[key] = value;
+  }
 }
 if (process.argv.includes("--setup") || !process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_ALLOWED_USER_IDS) {
   const configured = await runSetup(process.env, envFile);

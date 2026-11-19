@@ -1,20 +1,16 @@
 import type { ReplyKeyboardMarkup, SessionSettings } from "./types.js";
-import { isZh } from "./domain/settings.js";
+import { resolveLang, t } from "./i18n/index.js";
 
 /** Persistent keyboard shown immediately above Telegram's input field. */
 export function createMainKeyboard(settings?: SessionSettings): ReplyKeyboardMarkup {
-  const zh = isZh(settings);
+  const lang = resolveLang(settings);
   return {
     keyboard: [
-      zh
-        ? ["✨ 新对话", "🛑 停止", "🤖 模型", "💬 临时对话", "📋 菜单"]
-        : ["✨ New", "🛑 Stop", "🤖 Model", "💬 Btw", "📋 Menu"],
-      zh
-        ? ["📁 Diff", "⏪ 回退", "🗜️ 压缩", "📊 额度", "🌿 分支"]
-        : ["📁 Diff", "⏪ Rewind", "🗜️ Compact", "📊 Quota", "🌿 Fork"],
+      [t(lang, "kb.new"), t(lang, "kb.stop"), t(lang, "kb.model"), t(lang, "kb.btw"), t(lang, "kb.menu")],
+      [t(lang, "kb.diff"), t(lang, "kb.rewind"), t(lang, "kb.compact"), t(lang, "kb.quota"), t(lang, "kb.fork")],
     ],
     resize_keyboard: true,
     is_persistent: true,
-    input_field_placeholder: zh ? "向 AGY 发送提示词..." : "Send a prompt to AGY...",
+    input_field_placeholder: t(lang, "kb.placeholder"),
   };
 }

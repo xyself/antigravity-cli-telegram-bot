@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -20,6 +21,58 @@ export interface AvailableWorkspace {
   name: string;
   path: string;
   isDefault: boolean;
+  gitBranch?: string;
+  gitDirtyCount?: number;
+}
+
+/**
+ * Fast, non-throwing Git badge reader for workspace directories.
+ * Skips directories without `.git` immediately for zero overhead.
+ */
+export function readWorkspaceGitBadge(dirPath: string): { gitBranch?: string; gitDirtyCount?: number } {
+  const dotGit = path.join(dirPath, ".git");
+  if (!fs.existsSync(dotGit)) return {};
+
+  let gitBranch: string | undefined;
+  try {
+    let headPath = path.join(dotGit, "HEAD");
+    const stat = fs.statSync(dotGit);
+    if (stat.isFile()) {
+      const gitdirContent = fs.readFileSync(dotGit, "utf8").trim();
+      const match = gitdirContent.match(/^gitdir:\s*(.+)$/i);
+      if (match) {
+        headPath = path.resolve(dirPath, match[1].trim(), "HEAD");
+      }
+    }
+    if (fs.existsSync(headPath)) {
+      const head = fs.readFileSync(headPath, "utf8").trim();
+      if (head.startsWith("ref: refs/heads/")) {
+        gitBranch = head.slice("ref: refs/heads/".length).trim();
+      } else if (head.startsWith("ref:")) {
+        gitBranch = head.split("/").pop()?.trim() || "HEAD";
+      } else if (head.length >= 7) {
+        gitBranch = head.slice(0, 7);
+      }
+    }
+  } catch {
+    // Ignore HEAD read errors
+  }
+
+  let gitDirtyCount: number | undefined;
+  try {
+    const statusOut = execFileSync("git", ["status", "--porcelain"], {
+      cwd: dirPath,
+      timeout: 300,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const lines = statusOut.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    gitDirtyCount = lines.length;
+  } catch {
+    // Ignore timeout or git execution error
+  }
+
+  return { gitBranch, gitDirtyCount };
 }
 
 /**
@@ -54,10 +107,12 @@ export function listAvailableWorkspaces(
         }
         if (!seenPaths.has(realPath)) {
           seenPaths.add(realPath);
+          const badge = readWorkspaceGitBadge(realPath);
           result.push({
             name,
             path: realPath,
             isDefault: isDefaultParent && realPath === defaultWorkspace,
+            ...badge,
           });
         }
       }

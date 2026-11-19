@@ -1,7 +1,8 @@
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_EFFORT_VALUES, DEFAULT_MODE_VALUES, getActiveEfforts, getActiveModes } from "./cli-capabilities.js";
 import { resolveEffectiveDbPath } from "./db.js";
-import { DEFAULT_MODELS } from "./models.js";
+import { DEFAULT_MODELS, getActiveModels } from "./models.js";
 import type { AppConfig } from "./types.js";
 
 function resolvePath(inputPath: string): string {
@@ -80,10 +81,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   };
 }
 
-export const MODE_VALUES = ["plan", "accept-edits"] as const;
-export const EFFORT_VALUES = ["low", "medium", "high"] as const;
-export function isMode(value: string): value is (typeof MODE_VALUES)[number] { return (MODE_VALUES as readonly string[]).includes(value); }
-export function isEffort(value: string): value is (typeof EFFORT_VALUES)[number] { return (EFFORT_VALUES as readonly string[]).includes(value); }
+export const MODE_VALUES: readonly string[] = DEFAULT_MODE_VALUES;
+export const EFFORT_VALUES: readonly string[] = DEFAULT_EFFORT_VALUES;
+
+export function isMode(value: string): boolean {
+  return MODE_VALUES.includes(value) || getActiveModes().includes(value);
+}
+
+export function isEffort(value: string): boolean {
+  return EFFORT_VALUES.includes(value) || getActiveEfforts().includes(value);
+}
+
 export function isVerbose(value: string): value is "silent" | "compact" | "detailed" { return value === "silent" || value === "compact" || value === "detailed"; }
 export function isMenuProfile(value: string): value is import("./types.js").MenuProfile {
   return value === "daily" || value === "dev" || value === "mixed";
@@ -92,11 +100,23 @@ export function isTtsMode(value: string): value is "off" | "voice-only" | "voice
   return value === "off" || value === "voice-only" || value === "voice-and-text" || value === "auto";
 }
 
+const VALID_MODEL_SLUG_RE = /^[a-z0-9][a-z0-9._:-]*$/i;
+
 function modelsFrom(env: Record<string, string | undefined>): string[] {
   const configured = (env.AGY_ALLOWED_MODELS || "").split(",").map((value) => value.trim()).filter(Boolean);
-  const ids = configured.length ? configured : DEFAULT_MODELS.map((model) => model.id);
-  const known = new Set(DEFAULT_MODELS.map((model) => model.id));
-  for (const id of ids) if (!known.has(id)) throw new Error(`AGY_ALLOWED_MODELS contains unsupported model: ${id}`);
+  if (configured.length > 0) {
+    for (const id of configured) {
+      if (!VALID_MODEL_SLUG_RE.test(id)) {
+        throw new Error(`AGY_ALLOWED_MODELS contains invalid model ID: ${id}`);
+      }
+    }
+    return configured;
+  }
+  const ids = [...new Set([...DEFAULT_MODELS.map((m) => m.id), ...getActiveModels().map((m) => m.id)])];
+  const explicitModel = (env.AGY_MODEL || "").trim();
+  if (explicitModel && VALID_MODEL_SLUG_RE.test(explicitModel) && !ids.includes(explicitModel)) {
+    ids.push(explicitModel);
+  }
   return ids;
 }
 

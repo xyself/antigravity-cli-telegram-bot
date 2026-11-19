@@ -1,4 +1,5 @@
 import { runAgyCommand, validateCustomArgs, TOP_LEVEL_COMMANDS } from "../agy-runner.js";
+import { getDiscoveredSubcommands } from "../cli-capabilities.js";
 import type { AppContext } from "../context.js";
 import { controllerKey } from "../context.js";
 import { createMainKeyboard } from "../keyboards.js";
@@ -19,7 +20,8 @@ function customArgsForExecution(context: AppContext, args: string[]): string[] {
   let isPrintCommand = args.includes("--print") || args.includes("-p") || args.includes("--prompt");
   let executionArgs = [...args];
   const first = args[0] || "";
-  if (!isPrintCommand && !TOP_LEVEL_COMMANDS.has(first) && !["--help", "-h", "--version", "-v"].includes(first)) {
+  const isKnownSubcommand = TOP_LEVEL_COMMANDS.has(first) || getDiscoveredSubcommands().includes(first);
+  if (!isPrintCommand && !isKnownSubcommand && !["--help", "-h", "--version", "-v"].includes(first)) {
     executionArgs = ["--print", args.join(" ")];
     isPrintCommand = true;
   }

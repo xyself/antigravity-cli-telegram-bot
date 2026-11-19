@@ -27,7 +27,7 @@ export function enqueueJob(context: AppContext, chatId: ChatId, job: Partial<Que
       effectivePrompt = parts.join("\n\n");
     }
     if (status.active || status.queued > 0) {
-      context.queue.cancelForChat(chatId);
+      context.queue.cancelForChat(chatId, { includeBtw: false });
     }
   }
   const result = context.queue.enqueue({
@@ -43,6 +43,7 @@ export function enqueueJob(context: AppContext, chatId: ChatId, job: Partial<Que
     mediaPaths: job.mediaPaths,
     mediaType: job.mediaType,
     wasVoiceInput: job.wasVoiceInput,
+    resumeCount: job.resumeCount,
   });
   if (!result.accepted) {
     void reply(context, chatId, "Queue is full. Try again shortly.", createMainKeyboard(settingsFor(context, chatId)));

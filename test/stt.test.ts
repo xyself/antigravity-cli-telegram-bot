@@ -237,7 +237,7 @@ test("handleUpdate notifies user if whisper-local is configured but whisper bina
 
     const sent = harness.telegram.sentTexts();
     const hasWhisperWarning = sent.some((txt) =>
-      txt.includes("Whisper nicht verfügbar") || txt.includes("Whisper nicht gefunden")
+      txt.includes("Whisper unavailable") || txt.includes("Whisper not found") || txt.includes("Whisper 不可用")
     );
     assert.equal(hasWhisperWarning, true, "User must receive a warning that whisper is not installed");
   } finally {

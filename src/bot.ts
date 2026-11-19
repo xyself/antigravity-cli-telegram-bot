@@ -5,8 +5,8 @@ import { createMainKeyboard } from "./keyboards.js";
 import { escapeHtml } from "./telegram.js";
 import type { AppContext, BaseServices } from "./context.js";
 import { controllerKey } from "./context.js";
+import { refreshCliCapabilities } from "./cli-capabilities.js";
 import { settingsFor } from "./domain/settings.js";
-import { refreshModels } from "./usecases/model-selection.js";
 import { enqueueJob } from "./usecases/enqueue.js";
 import { runPromptJob } from "./usecases/prompt-job.js";
 import { defaultSubagentPoller } from "./usecases/subagent-poller.js";
@@ -23,10 +23,13 @@ export function createAppServices(base: BaseServices): AppContext {
   const services = { ...base, controllers: new Map<string, AbortController>(), pendingDangerousCommands: new Map<string, string[]>() } as AppContext;
   const queue = new JobQueue(base.config.queue.maxSize, (job, isCancelled) => runPromptJob(services, job, isCancelled), {
     maxConcurrent: 4,
-    onCancel: (chatId) => {
+    onCancel: (chatId, includeBtw) => {
       services.controllers.get(controllerKey("prompt", chatId))?.abort();
       services.controllers.get(controllerKey("custom", chatId))?.abort();
       services.controllers.get(controllerKey("subagent_poller", chatId))?.abort();
+      if (includeBtw) {
+        services.controllers.get(controllerKey("btw", chatId))?.abort();
+      }
       defaultSubagentPoller.cancelPolling(chatId);
     },
   });
@@ -35,107 +38,41 @@ export function createAppServices(base: BaseServices): AppContext {
 }
 
 export const BOT_COMMANDS: Array<{ command: string; description: string }> = [
-  { command: "menu", description: "Show the bottom control keyboard" },
+  { command: "menu", description: "Open AGY control panel & live status" },
   { command: "new", description: "Start a new AGY conversation" },
+  { command: "model", description: "Switch AI model" },
+  { command: "mode", description: "Switch execution mode (plan/edit/auto)" },
+  { command: "effort", description: "Set reasoning effort" },
+  { command: "workspace", description: "Switch active project workspace" },
+  { command: "resume", description: "Resume a saved conversation" },
+  { command: "context", description: "Inspect active context & tokens" },
+  { command: "usage", description: "Check live models & quota" },
+  { command: "compact", description: "Compact context snapshot" },
+  { command: "btw", description: "Ask an isolated side question" },
+  { command: "cancel", description: "Cancel active or queued jobs" },
   { command: "lang", description: "Switch language / 语言切换" },
-  { command: "resume", description: "Resume previous conversation from database" },
-  { command: "usage", description: "Check live models & quota via PTY" },
-  { command: "credits", description: "Check live AGY credits via PTY" },
-  { command: "context", description: "Show active context for current conversation" },
-  { command: "tokens", description: "Show token usage and turns" },
-  { command: "quota", description: "Alias for /usage" },
-  { command: "status", description: "Show current job status" },
-  { command: "cancel", description: "Cancel the active or queued job" },
-  { command: "model", description: "Show or choose the model" },
-  { command: "effort", description: "Show or change reasoning effort" },
-  { command: "mode", description: "Show or change plan/edit mode" },
-  { command: "sandbox", description: "Show or change sandbox mode" },
-  { command: "verbose", description: "Show or change verbose level (detailed, compact, silent)" },
-  { command: "savedefault", description: "Save current settings as permanent defaults" },
-  { command: "session", description: "Show session settings" },
-  { command: "workspace", description: "Show or change active project workspace" },
-  { command: "autotopic", description: "Toggle dynamic 1-emoji topic renaming (on/off)" },
-  { command: "learn", description: "Learn reusable rules/skills from recent chat" },
-  { command: "compact", description: "Compact context and create state snapshot to save tokens" },
-  { command: "btw", description: "Ask a side question without polluting session history" },
-  { command: "fork", description: "Clone current conversation into a new branch" },
-  { command: "rewind", description: "Roll back conversation history by N turns" },
-  { command: "help", description: "Show available commands" },
-  { command: "agents", description: "List available AGY agents" },
-  { command: "agent", description: "Select an AGY agent" },
-  { command: "project", description: "Set the AGY project" },
-  { command: "add_dir", description: "Add an AGY workspace directory" },
-  { command: "output_format", description: "Set AGY output format" },
-  { command: "json_schema", description: "Set AGY JSON schema" },
-  { command: "log_file", description: "Set AGY log file" },
-  { command: "print_timeout", description: "Set AGY print timeout" },
-  { command: "continue", description: "Toggle AGY conversation continuation" },
-  { command: "new_project", description: "Toggle new AGY project mode" },
-  { command: "disable_slash_commands", description: "Toggle AGY slash expansion" },
-  { command: "changelog", description: "Show AGY changelog" },
-  { command: "plugins", description: "List imported AGY plugins" },
-  { command: "skills", description: "List available AGY skills (workspace, global, built-in)" },
-  { command: "mcp", description: "List configured MCP servers" },
-  { command: "backup", description: "Export & download conversation archive (.tar.gz)" },
-  { command: "cli_help", description: "Show AGY CLI help" },
-  { command: "version", description: "Show AGY CLI version" },
-  { command: "update", description: "Update Telegram bot from GitHub & restart" },
-  { command: "restart", description: "Restart the AGY Telegram service" },
-  { command: "agy", description: "Run a custom non-interactive AGY command" },
-  { command: "agy_confirm", description: "Confirm a pending AGY command" },
-  { command: "remote_control", description: "Manage Remote Control daemon (status / start / stop)" },
+  { command: "cli_check", description: "Sync & inspect AGY CLI capabilities" },
+  { command: "agy", description: "Run any AGY CLI command" },
+  { command: "help", description: "Show control panel & CLI help" },
 ];
 
 export const BOT_COMMANDS_ZH: Array<{ command: string; description: string }> = [
-  { command: "menu", description: "打开底部快捷控制键盘" },
-  { command: "new", description: "开启新的 AGY 对话会话" },
-  { command: "lang", description: "切换界面语言 (中文 / English)" },
+  { command: "menu", description: "打开控制面板与实时状态" },
+  { command: "new", description: "开启新的 AGY 对话" },
+  { command: "model", description: "选择或切换 AI 模型" },
+  { command: "mode", description: "切换执行模式 (plan/edit/auto)" },
+  { command: "effort", description: "设置思考深度" },
+  { command: "workspace", description: "切换当前项目工作区" },
   { command: "resume", description: "浏览并恢复历史会话" },
-  { command: "usage", description: "通过 PTY 查询实时模型与配额用量" },
-  { command: "credits", description: "通过 PTY 查询 AGY 积分与额度" },
-  { command: "context", description: "查看当前会话活动上下文与 Token 占比" },
-  { command: "tokens", description: "查看 Token 用量统计与轮次" },
-  { command: "quota", description: "/usage 的快捷别名" },
-  { command: "status", description: "查看当前任务排队与执行状态" },
-  { command: "cancel", description: "取消排队任务与终止当前执行" },
-  { command: "model", description: "选择或切换当前 AI 模型" },
-  { command: "effort", description: "设置思考深度 (low / medium / high)" },
-  { command: "mode", description: "切换执行模式 (plan / accept-edits)" },
-  { command: "sandbox", description: "开启或关闭终端沙箱保护" },
-  { command: "verbose", description: "设置执行进度详细程度 (detailed / compact / silent)" },
-  { command: "savedefault", description: "将当前设置保存为全局永久默认配置" },
-  { command: "session", description: "查看当前会话设置与工作区状态" },
-  { command: "workspace", description: "查看或切换当前项目工作区目录" },
-  { command: "autotopic", description: "开启或关闭论坛话题 1-Emoji 短名称自动重命名" },
-  { command: "learn", description: "从近期对话中沉淀复用规则与技能" },
-  { command: "compact", description: "压缩上下文并创建快照以节省 Token" },
-  { command: "btw", description: "旁支提问，不污染当前长会话上下文" },
-  { command: "fork", description: "将当前会话分支克隆为一个新的平行会话" },
-  { command: "rewind", description: "回滚当前会话历史最近 N 轮对话" },
-  { command: "help", description: "显示所有支持的指令说明" },
-  { command: "agents", description: "查看可用自定义 AGY Agent 列表" },
-  { command: "agent", description: "选择指定的 AGY Agent" },
-  { command: "project", description: "设置 AGY 关联项目" },
-  { command: "add_dir", description: "添加 AGY 工作区挂载目录" },
-  { command: "output_format", description: "设置输出格式 (text / json / stream-json)" },
-  { command: "json_schema", description: "设置 AGY JSON Schema 校验规范" },
-  { command: "log_file", description: "设置 AGY 输出日志文件路径" },
-  { command: "print_timeout", description: "设置 AGY 单次输出最大超时时间" },
-  { command: "continue", description: "开启或关闭自动继续上轮对话" },
-  { command: "new_project", description: "开启或关闭新建项目模式" },
-  { command: "disable_slash_commands", description: "开启或关闭斜杠指令与技能展开" },
-  { command: "changelog", description: "查看 AGY CLI 更新日志" },
-  { command: "plugins", description: "查看已安装的 AGY 插件列表" },
-  { command: "skills", description: "查看可用技能 (工作区、全局、内置)" },
-  { command: "mcp", description: "查看已配置的 MCP 服务器列表" },
-  { command: "backup", description: "打包并下载历史会话备份 (.tar.gz)" },
-  { command: "cli_help", description: "查看 AGY 原生 CLI 帮助信息" },
-  { command: "version", description: "查看 AGY CLI 版本号" },
-  { command: "update", description: "从 GitHub 更新 Bot 源码并重启" },
-  { command: "restart", description: "重启 AGY Telegram 系统服务" },
-  { command: "agy", description: "执行非交互式原生 AGY 命令行指令" },
-  { command: "agy_confirm", description: "二次确认并执行高危 AGY 命令" },
-  { command: "remote_control", description: "管理远程控制守护进程（status / start / stop）" },
+  { command: "context", description: "查看当前活动上下文与 Token" },
+  { command: "usage", description: "查询实时模型与配额用量" },
+  { command: "compact", description: "压缩上下文以节省 Token" },
+  { command: "btw", description: "发起隔离的临时旁支提问" },
+  { command: "cancel", description: "终止当前任务与清空队列" },
+  { command: "lang", description: "切换界面语言 (中文 / English)" },
+  { command: "cli_check", description: "自检并同步 AGY CLI 最新能力" },
+  { command: "agy", description: "执行任意原生 AGY CLI 命令" },
+  { command: "help", description: "打开面板与 CLI 帮助" },
 ];
 
 export async function announcePendingRestartNotice(context: AppContext): Promise<void> {
@@ -194,6 +131,18 @@ export async function resumeInterruptedJobs(context: AppContext): Promise<void> 
         }
       } else if (job.prompt || job.kind === "usage" || job.kind === "credits" || job.kind === "context" || job.kind === "compact") {
         const promptSnippet = job.prompt ? ` (Prompt: <i>"${escapeHtml(job.prompt.slice(0, 60))}${job.prompt.length > 60 ? "..." : ""}"</i>)` : "";
+        const resumeCount = job.resumeCount ?? 0;
+        if (resumeCount >= 1) {
+          // Already auto-resumed once: do NOT re-run, or a self-restarting
+          // agent loops forever (restart -> resume -> restart -> ...).
+          await context.telegram.sendMessage(
+            chatId,
+            `\u269a <b>AGY Gateway restarted</b>\n\n\u4e0a\u4e00\u4e2a\u8bf7\u6c42\u5df2\u88ab\u91cd\u542f\u6253\u65ad\u8fc7\u4e00\u6b21\uff0c\u4e3a\u907f\u514d\u5faa\u73af\u91cd\u542f\uff0c\u8fd9\u6b21\u4e0d\u4f1a\u81ea\u52a8\u91cd\u8dd1\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\uff0c\u6216\u53d1 /new \u5f00\u65b0\u4f1a\u8bdd\u3002`,
+            createMainKeyboard(settingsFor(context, chatId)),
+            "HTML"
+          ).catch(() => undefined);
+          continue;
+        }
         await context.telegram.sendMessage(
           chatId,
           `⚡ <b>AGY Gateway restarted</b>\n\nYour previous request was interrupted by a restart${promptSnippet}.\n<i>Resuming execution now...</i>`,
@@ -204,6 +153,7 @@ export async function resumeInterruptedJobs(context: AppContext): Promise<void> 
         enqueueJob(context, chatId, {
           kind: (job.kind as "prompt" | "usage" | "credits" | "context" | "compact") || "prompt",
           prompt: job.prompt,
+          resumeCount: resumeCount + 1,
           imagePath: job.imagePath,
           imagePaths: job.imagePaths,
           documentPath: job.documentPath,
@@ -242,7 +192,7 @@ export function createBot(context: AppContext): { start(): Promise<void>; handle
   async function start(): Promise<void> {
     console.log(`agy-telegram started; workspace=${context.config.agy.workspace}; privateOnly=${context.config.telegram.privateOnly}`);
     await cleanupStaleTempFiles(context.config.tempDir).catch((err) => console.error(`cleanupStaleTempFiles failed: ${(err as Error).message}`));
-    await refreshModels(context).catch((error) => console.error(`refreshModels failed: ${(error as Error).message}`));
+    await refreshCliCapabilities(context.config.agy).catch((error) => console.error(`refreshCliCapabilities failed: ${(error as Error).message}`));
     await context.telegram.setMyCommands(BOT_COMMANDS).catch((error: unknown) => console.error(`setMyCommands default failed: ${(error as Error).message}`));
     await context.telegram.setMyCommands(BOT_COMMANDS_ZH, { language_code: "zh" }).catch((error: unknown) => console.error(`setMyCommands zh failed: ${(error as Error).message}`));
 
