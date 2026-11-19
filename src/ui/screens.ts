@@ -1,7 +1,7 @@
 import type { AppContext } from "../context.js";
 import { runAgyCommand } from "../agy-runner.js";
 import { refreshCliCapabilities } from "../cli-capabilities.js";
-import { settingsFor } from "../domain/settings.js";
+import { isZh, settingsFor } from "../domain/settings.js";
 import { resolveLang, t } from "../i18n/index.js";
 import { createMainKeyboard } from "../keyboards.js";
 import { escapeHtml } from "../telegram.js";
@@ -158,24 +158,39 @@ export function formatChangelogSummary(output: string): string {
 }
 
 export async function cliOutput(context: AppContext, chatId: ChatId, messageId: number, command: CliCommand): Promise<void> {
+  const currentSettings = settingsFor(context, chatId);
+  const zh = isZh(currentSettings, context, chatId);
   if (command === "skills") {
-    await context.telegram.editMessageText(chatId, messageId, "Loading AGY skills...");
+    await context.telegram.editMessageText(chatId, messageId, zh ? "⏳ 正在加载 AGY 技能列表..." : "Loading AGY skills...");
     await handleSkillsCommand(context, chatId, undefined, messageId);
     return;
   }
   if (command === "mcp") {
-    await context.telegram.editMessageText(chatId, messageId, "Reading MCP servers...");
+    await context.telegram.editMessageText(chatId, messageId, zh ? "⏳ 正在读取 MCP 服务..." : "Reading MCP servers...");
     await handleMcpCommand(context, chatId, messageId);
     return;
   }
-  await context.telegram.editMessageText(chatId, messageId, `Running agy ${cliCommandArgs(command).join(" ")}...`);
+  const cmdStr = `agy ${cliCommandArgs(command).join(" ")}`;
+  await context.telegram.editMessageText(chatId, messageId, zh ? `⏳ 正在执行 ${cmdStr}...` : `Running ${cmdStr}...`);
   try {
     const output = await runAgyCommand(context.config.agy, cliCommandArgs(command));
-    const title = command === "help" ? "AGY CLI help" : `AGY ${command}`;
-    const body = command === "changelog" ? formatChangelogSummary(output) : output;
-    await reply(context, chatId, `${title}\n\n${body}`, createMainKeyboard(settingsFor(context, chatId)));
+    let title = `AGY ${command}`;
+    if (command === "help") {
+      title = zh ? "📖 AGY CLI 帮助文档" : "AGY CLI help";
+    } else if (command === "plugins") {
+      title = zh ? "🧩 AGY 插件列表" : "AGY plugins";
+    }
+    let body = command === "changelog" ? formatChangelogSummary(output) : output;
+    if (command === "plugins") {
+      const trimmed = output?.trim();
+      if (!trimmed || trimmed === "No plugins installed." || /no plugins/i.test(trimmed)) {
+        body = zh ? "🧩 当前未安装任何插件 (No plugins installed)。" : "No plugins installed.";
+      }
+    }
+    await reply(context, chatId, `${title}\n\n${body}`, createMainKeyboard(currentSettings));
   } catch (error) {
-    await reply(context, chatId, `Could not read AGY ${command}: ${(error as Error).message}`, createMainKeyboard(settingsFor(context, chatId)));
+    const errMsg = zh ? `无法读取 AGY ${command}: ` : `Could not read AGY ${command}: `;
+    await reply(context, chatId, `${errMsg}${(error as Error).message}`, createMainKeyboard(currentSettings));
   }
 }
 

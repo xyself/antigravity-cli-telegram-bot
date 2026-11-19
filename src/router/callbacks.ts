@@ -96,6 +96,8 @@ export async function handleCallback(context: AppContext, callback: TelegramCall
       const settings = settingsFor(context, chatId);
       settings.mode = "accept-edits";
       await saveSettings(context, chatId, settings);
+      const currentSession = context.state.session(chatId) || {};
+      await context.state.setSession(chatId, { ...currentSession, revertModeToPlanAfterRun: true });
       await replyWithHtml(context, chatId, t(lang, "postturn.planApproved"));
       enqueueJob(context, chatId, {
         kind: "prompt",

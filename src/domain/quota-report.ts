@@ -52,7 +52,8 @@ export function formatQuotaLimitLine(
   label: string,
   val: string | null,
   refresh: string | null,
-  windowMinutes: number
+  windowMinutes: number,
+  zh = false
 ): string | null {
   if (!val) return null;
 
@@ -67,8 +68,8 @@ export function formatQuotaLimitLine(
 
   if (isValDisabled) {
     indicator = "⚪";
-    const refreshPart = refresh ? ` (in ${refresh})` : "";
-    return `• ${label}: ${indicator} <i>Disabled</i>${refreshPart}`;
+    const refreshPart = refresh ? (zh ? ` (${refresh}后重置)` : ` (in ${refresh})`) : "";
+    return `• ${label}: ${indicator} <i>${zh ? "已停用" : "Disabled"}</i>${refreshPart}`;
   }
 
   if (actualPct !== null) {
@@ -89,7 +90,7 @@ export function formatQuotaLimitLine(
 
       const roundedDelta = Math.round(delta);
       if (indicator === "🟢" && delta >= -2 && delta <= 0.5) {
-        bufferTag = " <i>[On track]</i>";
+        bufferTag = zh ? " <i>[节奏正常]</i>" : " <i>[On track]</i>";
       } else if (roundedDelta > 0) {
         bufferTag = ` <i>[+${roundedDelta}%]</i>`;
       } else {
@@ -106,7 +107,7 @@ export function formatQuotaLimitLine(
     }
   }
 
-  const refreshPart = refresh ? ` (in ${refresh})` : "";
+  const refreshPart = refresh ? (zh ? ` (${refresh}后重置)` : ` (in ${refresh})`) : "";
   return `• ${label}: ${indicator} <b>${displayVal}</b>${refreshPart}${bufferTag}`;
 }
 
@@ -215,46 +216,50 @@ export function extractQuota(rawOutput: string, cleaned?: string): QuotaReport {
 }
 
 /** Render a {@link QuotaReport} into the Telegram HTML block. */
-export function renderQuota(report: QuotaReport): string {
-  const lines = ["📊 <b>Models & Quota</b>\n"];
-  if (report.account) lines.push(`<b>Account:</b> <code>${report.account}</code>\n`);
+export function renderQuota(report: QuotaReport, zh = false): string {
+  const title = zh ? "📊 <b>模型与配额用量</b>\n" : "📊 <b>Models & Quota</b>\n";
+  const lines = [title];
+  if (report.account) lines.push(zh ? `<b>账号：</b> <code>${report.account}</code>\n` : `<b>Account:</b> <code>${report.account}</code>\n`);
 
   const hasGeminiLimits = sectionHasLimits(report.gemini);
   const hasClaudeLimits = sectionHasLimits(report.claude);
   const hasArgonLimits = sectionHasLimits(report.argon);
 
+  const weeklyLabel = zh ? "每周周期" : "Weekly";
+  const fiveHourLabel = zh ? "5小时周期" : "5-Hour";
+
   if (hasGeminiLimits) {
-    lines.push("<b>Gemini Models</b>");
-    const weeklyLine = formatQuotaLimitLine("Weekly", report.gemini.weekly.value, report.gemini.weekly.refresh, WEEKLY_WINDOW_MINUTES);
+    lines.push(zh ? "<b>Gemini 系列模型</b>" : "<b>Gemini Models</b>");
+    const weeklyLine = formatQuotaLimitLine(weeklyLabel, report.gemini.weekly.value, report.gemini.weekly.refresh, WEEKLY_WINDOW_MINUTES, zh);
     if (weeklyLine) lines.push(weeklyLine);
-    const fiveHourLine = formatQuotaLimitLine("5-Hour", report.gemini.fiveHour.value, report.gemini.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES);
+    const fiveHourLine = formatQuotaLimitLine(fiveHourLabel, report.gemini.fiveHour.value, report.gemini.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES, zh);
     if (fiveHourLine) lines.push(fiveHourLine);
   }
 
   if (hasClaudeLimits) {
     if (hasGeminiLimits) lines.push("");
-    lines.push("<b>Claude & GPT Models</b>");
-    const weeklyLine = formatQuotaLimitLine("Weekly", report.claude.weekly.value, report.claude.weekly.refresh, WEEKLY_WINDOW_MINUTES);
+    lines.push(zh ? "<b>Claude 与 GPT 系列模型</b>" : "<b>Claude & GPT Models</b>");
+    const weeklyLine = formatQuotaLimitLine(weeklyLabel, report.claude.weekly.value, report.claude.weekly.refresh, WEEKLY_WINDOW_MINUTES, zh);
     if (weeklyLine) lines.push(weeklyLine);
-    const fiveHourLine = formatQuotaLimitLine("5-Hour", report.claude.fiveHour.value, report.claude.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES);
+    const fiveHourLine = formatQuotaLimitLine(fiveHourLabel, report.claude.fiveHour.value, report.claude.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES, zh);
     if (fiveHourLine) lines.push(fiveHourLine);
   }
 
   if (hasArgonLimits) {
     if (hasGeminiLimits || hasClaudeLimits) lines.push("");
-    lines.push("<b>Gemini 4 Argon</b>");
-    const weeklyLine = formatQuotaLimitLine("Weekly", report.argon.weekly.value, report.argon.weekly.refresh, WEEKLY_WINDOW_MINUTES);
+    lines.push(zh ? "<b>Gemini 4 Argon</b>" : "<b>Gemini 4 Argon</b>");
+    const weeklyLine = formatQuotaLimitLine(weeklyLabel, report.argon.weekly.value, report.argon.weekly.refresh, WEEKLY_WINDOW_MINUTES, zh);
     if (weeklyLine) lines.push(weeklyLine);
-    const fiveHourLine = formatQuotaLimitLine("5-Hour", report.argon.fiveHour.value, report.argon.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES);
+    const fiveHourLine = formatQuotaLimitLine(fiveHourLabel, report.argon.fiveHour.value, report.argon.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES, zh);
     if (fiveHourLine) lines.push(fiveHourLine);
   }
 
   if (!hasGeminiLimits && !hasClaudeLimits && !hasArgonLimits) {
     if (sectionHasLimits(report.general)) {
-      lines.push("<b>Antigravity Quota</b>");
-      const weeklyLine = formatQuotaLimitLine("Weekly", report.general.weekly.value, report.general.weekly.refresh, WEEKLY_WINDOW_MINUTES);
+      lines.push(zh ? "<b>Antigravity 配额</b>" : "<b>Antigravity Quota</b>");
+      const weeklyLine = formatQuotaLimitLine(weeklyLabel, report.general.weekly.value, report.general.weekly.refresh, WEEKLY_WINDOW_MINUTES, zh);
       if (weeklyLine) lines.push(weeklyLine);
-      const fiveHourLine = formatQuotaLimitLine("5-Hour", report.general.fiveHour.value, report.general.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES);
+      const fiveHourLine = formatQuotaLimitLine(fiveHourLabel, report.general.fiveHour.value, report.general.fiveHour.refresh, FIVE_HOUR_WINDOW_MINUTES, zh);
       if (fiveHourLine) lines.push(fiveHourLine);
     }
   }
@@ -263,6 +268,6 @@ export function renderQuota(report: QuotaReport): string {
 }
 
 /** Back-compat one-shot: raw PTY output to rendered HTML. */
-export function parseUsageQuota(rawOutput: string, cleaned?: string): string {
-  return renderQuota(extractQuota(rawOutput, cleaned));
+export function parseUsageQuota(rawOutput: string, cleaned?: string, zh = false): string {
+  return renderQuota(extractQuota(rawOutput, cleaned), zh);
 }

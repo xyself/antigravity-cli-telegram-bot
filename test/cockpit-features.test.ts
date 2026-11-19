@@ -52,17 +52,29 @@ test("callback parser supports all new cockpit actions", () => {
 });
 
 test("postTurnActionKeyboard renders contextual buttons for plan mode, dirty git workspace, and high context", () => {
-  const planKb = postTurnActionKeyboard({
+  const planSeekingKb = postTurnActionKeyboard({
     mode: "plan",
     hasGitChanges: false,
     contextPct: 20,
     toolCalls: 1,
     lang: "zh",
+    isPlanSeekingApproval: true,
   });
-  assert.ok(planKb);
-  const planFlat = planKb!.inline_keyboard.flat().map((b) => b.callback_data);
+  assert.ok(planSeekingKb);
+  const planFlat = planSeekingKb!.inline_keyboard.flat().map((b) => b.callback_data);
   assert.ok(planFlat.includes("action:approve-plan"));
   assert.ok(planFlat.includes("cli:directive-grill-me"));
+
+  const planDoneKb = postTurnActionKeyboard({
+    mode: "plan",
+    hasGitChanges: false,
+    contextPct: 20,
+    toolCalls: 1,
+    lang: "zh",
+    isPlanSeekingApproval: false,
+  });
+  const planDoneFlat = planDoneKb ? planDoneKb.inline_keyboard.flat().map((b) => b.callback_data) : [];
+  assert.ok(!planDoneFlat.includes("action:approve-plan"));
 
   const dirtyHighCtxKb = postTurnActionKeyboard({
     mode: "accept-edits",

@@ -34,7 +34,6 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "tsx src/dev-server.ts",
     "build": "tsc",
     "lint": "tsc --noEmit",
     "start": "node dist/cli.js",

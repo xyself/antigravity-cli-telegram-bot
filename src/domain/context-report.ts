@@ -51,22 +51,26 @@ export function extractContext(rawOutput: string, cleaned?: string): ContextRepo
 }
 
 /** Render a {@link ContextReport} into the Telegram HTML block. */
-export function renderContext(report: ContextReport): string {
+export function renderContext(report: ContextReport, zh = false): string {
+  const title = zh ? "🧠 <b>活动上下文概览</b>" : "🧠 <b>Active Context</b>";
+  const breakdownTitle = zh ? "<b>Token 细分统计</b>" : "<b>Token breakdown</b>";
+  const artifactsLabel = zh ? "<b>产物文件 (Artifacts)：</b>" : "<b>Artifacts:</b>";
+
   const result = [
-    "🧠 <b>Active Context</b>",
+    title,
     report.modelLine,
     report.usageLine,
-    report.categories.length ? `<b>Token breakdown</b>\n${report.categories.map((line) => `• ${line}`).join("\n")}` : null,
+    report.categories.length ? `${breakdownTitle}\n${report.categories.map((line) => `• ${line}`).join("\n")}` : null,
     report.freeLine,
     report.checkpointLine && report.checkpointDetail ? `${report.checkpointLine} · ${report.checkpointDetail}` : report.checkpointLine,
-    report.artifactsCount ? `<b>Artifacts:</b> ${report.artifactsCount}` : null,
+    report.artifactsCount ? `${artifactsLabel} ${report.artifactsCount}` : null,
   ].filter((line): line is string => Boolean(line));
   return result.join("\n");
 }
 
 /** Back-compat one-shot: raw PTY output to rendered HTML. */
-export function parseContext(rawOutput: string, cleaned?: string): string {
-  return renderContext(extractContext(rawOutput, cleaned));
+export function parseContext(rawOutput: string, cleaned?: string, zh = false): string {
+  return renderContext(extractContext(rawOutput, cleaned), zh);
 }
 
 /**

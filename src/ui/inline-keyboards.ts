@@ -67,13 +67,14 @@ export interface PostTurnActionOptions {
   contextPct?: number;
   toolCalls?: number;
   lang: Lang;
+  isPlanSeekingApproval?: boolean;
 }
 
 export function postTurnActionKeyboard(opts: PostTurnActionOptions): InlineKeyboardMarkup | null {
-  const { mode, hasGitChanges, contextPct, toolCalls, lang } = opts;
+  const { mode, hasGitChanges, contextPct, toolCalls, lang, isPlanSeekingApproval } = opts;
   const rows: InlineButton[][] = [];
 
-  if (mode === "plan") {
+  if (mode === "plan" && isPlanSeekingApproval) {
     rows.push([
       button(t(lang, "postturn.approvePlan"), "action:approve-plan"),
       button(t(lang, "postturn.grillPlan"), "cli:directive-grill-me"),

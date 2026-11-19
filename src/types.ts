@@ -140,6 +140,7 @@ export interface SessionState {
   updatedAt?: string;
   pendingSubagentPoll?: PendingSubagentPoll | null;
   hasAutoRenamedTopic?: boolean;
+  revertModeToPlanAfterRun?: boolean;
   pendingBtw?: boolean;
   pendingInput?: { kind: PendingInputKind; messageId?: number } | null;
 }

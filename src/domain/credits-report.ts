@@ -49,13 +49,14 @@ export function extractCredits(rawOutput: string, cleaned?: string): CreditsRepo
 }
 
 /** Render a {@link CreditsReport} into the Telegram HTML block. */
-export function renderCredits(report: CreditsReport): string {
-  const lines = ["💳 <b>AGY Credits</b>\n"];
+export function renderCredits(report: CreditsReport, zh = false): string {
+  const header = zh ? "💳 <b>AGY 积分与额度</b>\n" : "💳 <b>AGY Credits</b>\n";
+  const lines = [header];
   if (report.creditsRemaining) {
-    lines.push(`• Credits Remaining: <b>${report.creditsRemaining}</b>`);
+    lines.push(zh ? `• 剩余积分：<b>${report.creditsRemaining}</b>` : `• Credits Remaining: <b>${report.creditsRemaining}</b>`);
   }
   if (report.purchaseUrl) {
-    lines.push(`• Purchase / Top-up: <a href="${report.purchaseUrl}">${report.purchaseUrl}</a>`);
+    lines.push(zh ? `• 充值 / 购买链接：<a href="${report.purchaseUrl}">${report.purchaseUrl}</a>` : `• Purchase / Top-up: <a href="${report.purchaseUrl}">${report.purchaseUrl}</a>`);
   }
   if (!report.creditsRemaining && !report.purchaseUrl && report.fallbackLines) {
     lines.push(report.fallbackLines.join("\n"));
@@ -64,6 +65,6 @@ export function renderCredits(report: CreditsReport): string {
 }
 
 /** Back-compat one-shot: raw PTY output to rendered HTML. */
-export function parseCredits(rawOutput: string, cleaned?: string): string {
-  return renderCredits(extractCredits(rawOutput, cleaned));
+export function parseCredits(rawOutput: string, cleaned?: string, zh = false): string {
+  return renderCredits(extractCredits(rawOutput, cleaned), zh);
 }

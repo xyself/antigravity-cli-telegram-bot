@@ -46,11 +46,13 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
   const lang = resolveLang(settings, context, chatId);
   const effectiveWorkspace = settings.workspace || context.config.agy.workspace;
 
+  const zh = lang === "zh";
+
   if (!fs.existsSync(effectiveWorkspace)) {
     await reply(
       context,
       chatId,
-      `Directory not found: <code>${escapeHtml(effectiveWorkspace)}</code>`,
+      zh ? `未找到工作区目录：<code>${escapeHtml(effectiveWorkspace)}</code>` : `Directory not found: <code>${escapeHtml(effectiveWorkspace)}</code>`,
       createMainKeyboard(settings)
     );
     return;
@@ -68,7 +70,7 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
     await reply(
       context,
       chatId,
-      "Security boundary violation: workspace directory must reside within configured projects root.",
+      zh ? "安全边界限制：工作区目录必须位于已配置的项目根目录内。" : "Security boundary violation: workspace directory must reside within configured projects root.",
       createMainKeyboard(settings)
     );
     return;
@@ -79,7 +81,7 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
     await replyWithHtml(
       context,
       chatId,
-      `⚠️ The active workspace is not an initialized Git repository:\n<code>${escapeHtml(realWorkspace)}</code>`,
+      zh ? `⚠️ 当前活动工作区不是已初始化的 Git 仓库：\n<code>${escapeHtml(realWorkspace)}</code>` : `⚠️ The active workspace is not an initialized Git repository:\n<code>${escapeHtml(realWorkspace)}</code>`,
       createMainKeyboard(settings)
     );
     return;
@@ -97,7 +99,7 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
       await replyWithHtml(
         context,
         chatId,
-        `ℹ️ No local changes in active workspace:\n<code>${escapeHtml(realWorkspace)}</code>`,
+        zh ? `ℹ️ 当前工作区无任何本地改动：\n<code>${escapeHtml(realWorkspace)}</code>` : `ℹ️ No local changes in active workspace:\n<code>${escapeHtml(realWorkspace)}</code>`,
         createMainKeyboard(settings)
       );
       return;
@@ -105,7 +107,7 @@ export async function handleDiffCommand(context: AppContext, chatId: ChatId): Pr
     await replyWithHtml(
       context,
       chatId,
-      `ℹ️ No modified tracked files in active workspace (untracked files detected):\n<code>${escapeHtml(realWorkspace)}</code>\n\n<pre>${escapeHtml(statusRes.stdout)}</pre>`,
+      zh ? `ℹ️ 当前工作区无已跟踪文件的修改（检测到未跟踪文件）：\n<code>${escapeHtml(realWorkspace)}</code>\n\n<pre>${escapeHtml(statusRes.stdout)}</pre>` : `ℹ️ No modified tracked files in active workspace (untracked files detected):\n<code>${escapeHtml(realWorkspace)}</code>\n\n<pre>${escapeHtml(statusRes.stdout)}</pre>`,
       gitDiffActionsKeyboard(lang, true)
     );
     return;

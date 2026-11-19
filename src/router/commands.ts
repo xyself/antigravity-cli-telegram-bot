@@ -523,9 +523,18 @@ command("/new-project", "/disable-slash-commands")(async ({ context, chatId, com
 });
 
 command("/agents")(async ({ context, chatId }) => {
-  await reply(context, chatId, "Loading AGY agents...", createMainKeyboard(settingsFor(context, chatId)));
-  const output = await runAgyCommand(context.config.agy, ["agents"]).catch((error) => `Could not read AGY agents: ${(error as Error).message}`);
-  await reply(context, chatId, `AGY agents\n\n${output || "No custom agents available."}`, createMainKeyboard(settingsFor(context, chatId)));
+  const currentSettings = settingsFor(context, chatId);
+  const zh = isZh(currentSettings, context, chatId);
+  await reply(context, chatId, zh ? "⏳ 正在加载 AGY 代理列表..." : "Loading AGY agents...", createMainKeyboard(currentSettings));
+  const rawOutput = await runAgyCommand(context.config.agy, ["agents"]).catch((error) => `Could not read AGY agents: ${(error as Error).message}`);
+  const trimmed = rawOutput?.trim();
+  const isEmpty = !trimmed || trimmed === "AGY returned no output." || /no output/i.test(trimmed);
+  let content = trimmed;
+  if (isEmpty) {
+    content = zh ? "🤖 当前未配置自定义子代理 (Custom Agents)，默认使用主 Agent。" : "No custom agents available.";
+  }
+  const header = zh ? "🤖 AGY 代理列表" : "AGY agents";
+  await reply(context, chatId, `${header}\n\n${content}`, createMainKeyboard(currentSettings));
 });
 
 command("/changelog")(async ({ context, chatId }) => {
@@ -534,8 +543,17 @@ command("/changelog")(async ({ context, chatId }) => {
 });
 
 command("/plugins")(async ({ context, chatId }) => {
+  const currentSettings = settingsFor(context, chatId);
+  const zh = isZh(currentSettings, context, chatId);
   const output = await runAgyCommand(context.config.agy, ["plugins", "list"]).catch((error) => `Could not read AGY plugins: ${(error as Error).message}`);
-  await reply(context, chatId, `AGY plugins\n\n${output || "No imported plugins."}`, createMainKeyboard(settingsFor(context, chatId)));
+  const trimmed = output?.trim();
+  const isEmpty = !trimmed || trimmed === "No plugins installed." || /no plugins/i.test(trimmed);
+  let content = trimmed;
+  if (isEmpty) {
+    content = zh ? "🧩 当前未安装任何插件 (No plugins installed)。" : "No plugins installed.";
+  }
+  const header = zh ? "🧩 AGY 插件列表" : "AGY plugins";
+  await reply(context, chatId, `${header}\n\n${content}`, createMainKeyboard(currentSettings));
 });
 
 command("/skills")(async ({ context, chatId, args }) => {

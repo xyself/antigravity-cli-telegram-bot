@@ -9,7 +9,7 @@ import type { QueueJob } from "../queue.js";
 import { escapeHtml, findReferencedMediaFiles, formatTelegramHtml } from "../telegram.js";
 import { formatStepUpdate, runAgy } from "../agy-runner.js";
 import { parseContext, parseContextMetrics, parseCredits, parseUsageQuota, parseTokenValue, runPtyCommand } from "../pty-runner.js";
-import { isZh, settingsFor } from "../domain/settings.js";
+import { isZh, saveSettings, settingsFor } from "../domain/settings.js";
 import { resolveLang } from "../i18n/index.js";
 import { addUsage, formatTokenCount } from "../domain/usage-math.js";
 import { buildTelemetryQuoteBlock } from "../domain/telemetry.js";
@@ -36,7 +36,7 @@ interface PtyReportSpec {
   startingMessage: string;
   doneMessage: string;
   errorPrefix: string;
-  format: (rawOutput: string) => string;
+  format: (rawOutput: string, cleaned?: string, zh?: boolean) => string;
   conversationId?: (session: { conversationId?: string } | null) => string | undefined;
   missingConversationMessage?: string;
 }
@@ -99,7 +99,7 @@ async function runPtyReportJob(context: AppContext, job: QueueJob & { kind: PtyR
       signal: controller.signal,
     });
     if (isCancelled()) return;
-    const formatted = spec.format(output);
+    const formatted = spec.format(output, undefined, zh);
     if (job.kind === "context") {
       const metrics = parseContextMetrics(output);
       if (metrics.tokens) {
@@ -112,7 +112,7 @@ async function runPtyReportJob(context: AppContext, job: QueueJob & { kind: PtyR
     }
     if (progressMessage) await context.telegram.editMessageText(job.chatId, progressMessage.message_id, doneMsg).catch(() => undefined);
     const replyMarkup = job.kind === "context"
-      ? contextActionsKeyboard()
+      ? contextActionsKeyboard(zh)
       : createMainKeyboard(settingsFor(context, job.chatId));
     await replyWithHtml(context, job.chatId, formatted, replyMarkup);
   } catch (error) {
@@ -618,6 +618,11 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
       const gitSummary = await getWorkspaceGitSummary(effectiveWorkspace).catch(() => null);
       const hasGitChanges = Boolean(gitSummary && gitSummary.totalChanged > 0);
       const gitSummaryHtml = gitSummary && hasGitChanges ? formatWorkspaceGitSummaryHtml(gitSummary, lang) : "";
+      const isPlanSeekingApproval = Boolean(
+        result.text &&
+        /Proceed|请审阅|请确认|回复.*确定|approval|approve|_plan\.md/i.test(result.text) &&
+        !/walkthrough\.md|执行完成|全部任务已|任务完成记录|已完成/i.test(result.text)
+      );
 
       const isSeparateTelemetry = (telemetryMode === "message" || telemetryMode === "separate") && Boolean(result.text);
       const keyboardNeeded = !isSeparateTelemetry;
@@ -654,6 +659,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           contextPct: resolved.pct,
           toolCalls: result.toolCalls,
           lang,
+          isPlanSeekingApproval,
         });
         const telemetryHtml = formatTelegramHtml(telemetryBlock);
         const combinedHtml = gitSummaryHtml ? `${telemetryHtml}\n\n${gitSummaryHtml}` : telemetryHtml;
@@ -690,6 +696,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           contextPct: resolved.pct,
           toolCalls: result.toolCalls,
           lang,
+          isPlanSeekingApproval,
         });
         const quoteHtml = formatTelegramHtml(telemetryBlock);
         const extraHtml = gitSummaryHtml ? `${quoteHtml}\n\n${gitSummaryHtml}` : quoteHtml;
@@ -717,6 +724,7 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           contextPct: resolved.pct,
           toolCalls: result.toolCalls,
           lang,
+          isPlanSeekingApproval,
         });
         if (gitSummaryHtml) {
           await replyWithHtml(context, job.chatId, gitSummaryHtml, smartBar ?? undefined);
@@ -725,6 +733,22 @@ export async function runPromptJob(context: AppContext, job: QueueJob, isCancell
           await context.telegram.editMessageReplyMarkup(job.chatId, lastMsg.message_id, smartBar).catch(() => undefined);
         }
       }
+    }
+
+    // Auto-revert mode back to "plan" if temporarily elevated by "approve-plan"
+    const currentSessionAfterRun = context.state.session(job.chatId);
+    if (currentSessionAfterRun?.revertModeToPlanAfterRun) {
+      const activeSettings = settingsFor(context, job.chatId);
+      activeSettings.mode = "plan";
+      await saveSettings(context, job.chatId, activeSettings);
+      await context.state.setSession(job.chatId, {
+        ...currentSessionAfterRun,
+        revertModeToPlanAfterRun: false,
+      });
+      const revertNotice = zh
+        ? "🔄 计划执行完毕，运行模式已自动恢复为 <code>plan</code>（规划模式）。"
+        : "🔄 Plan execution finished, mode automatically restored to <code>plan</code>.";
+      await replyWithHtml(context, job.chatId, revertNotice, createMainKeyboard(activeSettings));
     }
 
     if (shouldSendVoice && result.text) {
