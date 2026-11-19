@@ -249,3 +249,18 @@ test("Git summary, diff action bar, 1-tap commit via pendingInput, and 2-step re
     harness.cleanup();
   }
 });
+
+test("resolveBotGitRepoDir locates forked Git repository via BOT_REPO_DIR", async () => {
+  const { resolveBotGitRepoDir } = await import("../src/usecases/self-update.js");
+  const harness = createHarness();
+  try {
+    const forkDir = path.join(harness.config.agy.workspace, "my-fork");
+    fs.mkdirSync(forkDir, { recursive: true });
+    initGitRepo(forkDir);
+
+    const found = await resolveBotGitRepoDir({ BOT_REPO_DIR: forkDir });
+    assert.equal(found.repoDir, path.resolve(forkDir));
+  } finally {
+    harness.cleanup();
+  }
+});
